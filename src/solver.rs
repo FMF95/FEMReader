@@ -31,13 +31,12 @@ fn parse_include_like_references(content: &str) -> Vec<String> {
         }
 
         let upper = line.to_ascii_uppercase();
-        if upper.starts_with("INCLUDE")
+        if (upper.starts_with("INCLUDE")
             || upper.starts_with("*INCLUDE")
-            || upper.contains("INCLUDE=")
+            || upper.contains("INCLUDE="))
+            && let Some(reference) = extract_reference(line)
         {
-            if let Some(reference) = extract_reference(line) {
-                references.push(reference);
-            }
+            references.push(reference);
         }
     }
 
