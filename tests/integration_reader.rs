@@ -1,6 +1,7 @@
 use femreader::assembler::DefaultModelAssembler;
 use femreader::cache::IncrementalCache;
 use femreader::dependency::DefaultDependencyResolver;
+use femreader::model::SolverKind;
 use femreader::pipeline::ReaderPipeline;
 use femreader::scanner::{DefaultFileSystemScanner, FileSystemScanner};
 use femreader::serializer::JsonSerializer;
@@ -85,6 +86,102 @@ fn scanner_uses_incremental_cache() {
 
     let second = scanner.scan(&root, &mut cache).expect("second scan");
     assert!(second.files.iter().all(|f| !f.changed_since_last_scan));
+
+    fs::remove_dir_all(&root).expect("cleanup temp root");
+}
+
+#[test]
+fn detects_solver_per_directory_from_extensions() {
+    let root = unique_temp_dir("solver_detection");
+    let nastran_dir = root.join("nastran");
+    let optistruct_dir = root.join("optistruct");
+    let abaqus_dir = root.join("abaqus");
+
+    fs::create_dir_all(&nastran_dir).expect("create nastran dir");
+    fs::create_dir_all(&optistruct_dir).expect("create optistruct dir");
+    fs::create_dir_all(&abaqus_dir).expect("create abaqus dir");
+
+    fs::write(nastran_dir.join("model.bdf"), "GRID,1").expect("write nastran model");
+    fs::write(optistruct_dir.join("model.fem"), "GRID,1").expect("write optistruct model");
+    fs::write(abaqus_dir.join("model.inp"), "*NODE").expect("write abaqus model");
+
+    let adapters: Vec<Box<dyn SolverAdapter + Send + Sync>> = vec![
+        Box::new(NastranAdapter),
+        Box::new(OptiStructAdapter),
+        Box::new(AbaqusAdapter),
+    ];
+
+    let pipeline = ReaderPipeline {
+        scanner: DefaultFileSystemScanner,
+        dependency_resolver: DefaultDependencyResolver::new(adapters),
+        model_assembler: DefaultModelAssembler,
+        serializer: JsonSerializer,
+    };
+
+    let mut cache = IncrementalCache::default();
+    let content = pipeline.run(&root, &mut cache).expect("pipeline run");
+
+    for file in &content.files {
+        match file.extension.as_deref() {
+            Some("bdf") => assert_eq!(file.solver_hint, SolverKind::Nastran),
+            Some("fem") => assert_eq!(file.solver_hint, SolverKind::OptiStruct),
+            Some("inp") => assert_eq!(file.solver_hint, SolverKind::Abaqus),
+            _ => {}
+        }
+    }
+
+    let mut model_solvers: Vec<SolverKind> = content.models.iter().map(|m| m.solver.clone()).collect();
+    model_solvers.sort_by_key(|solver| match solver {
+        SolverKind::Unknown => 0,
+        SolverKind::Nastran => 1,
+        SolverKind::OptiStruct => 2,
+        SolverKind::Abaqus => 3,
+    });
+
+    assert_eq!(
+        model_solvers,
+        vec![SolverKind::Nastran, SolverKind::OptiStruct, SolverKind::Abaqus]
+    );
+
+    fs::remove_dir_all(&root).expect("cleanup temp root");
+}
+
+#[test]
+fn keeps_solver_unknown_when_directory_has_mixed_solver_extensions() {
+    let root = unique_temp_dir("mixed_solver_detection");
+    fs::create_dir_all(&root).expect("create temp root");
+
+    fs::write(root.join("mixed_model.fem"), "GRID,1").expect("write fem");
+    fs::write(root.join("mixed_model.inp"), "*NODE").expect("write inp");
+
+    let adapters: Vec<Box<dyn SolverAdapter + Send + Sync>> = vec![
+        Box::new(NastranAdapter),
+        Box::new(OptiStructAdapter),
+        Box::new(AbaqusAdapter),
+    ];
+
+    let pipeline = ReaderPipeline {
+        scanner: DefaultFileSystemScanner,
+        dependency_resolver: DefaultDependencyResolver::new(adapters),
+        model_assembler: DefaultModelAssembler,
+        serializer: JsonSerializer,
+    };
+
+    let mut cache = IncrementalCache::default();
+    let content = pipeline.run(&root, &mut cache).expect("pipeline run");
+
+    assert!(
+        content
+            .files
+            .iter()
+            .all(|file| file.solver_hint == SolverKind::Unknown)
+    );
+    assert!(
+        content
+            .models
+            .iter()
+            .all(|model| model.solver == SolverKind::Unknown)
+    );
 
     fs::remove_dir_all(&root).expect("cleanup temp root");
 }

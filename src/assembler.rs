@@ -94,13 +94,20 @@ impl ModelAssembler for DefaultModelAssembler {
 }
 
 fn select_solver(file_ids: &[String], id_to_solver: &HashMap<String, SolverKind>) -> SolverKind {
+    let mut detected: Option<SolverKind> = None;
+
     for file_id in file_ids {
         if let Some(kind) = id_to_solver.get(file_id) {
             match kind {
                 SolverKind::Unknown => {}
-                _ => return kind.clone(),
+                _ => match &detected {
+                    None => detected = Some(kind.clone()),
+                    Some(previous) if previous == kind => {}
+                    Some(_) => return SolverKind::Unknown,
+                },
             }
         }
     }
-    SolverKind::Unknown
+
+    detected.unwrap_or(SolverKind::Unknown)
 }

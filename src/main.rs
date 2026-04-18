@@ -97,4 +97,5 @@ fn print_help() {
     println!("  <input_directory>   Root directory to scan");
     println!("  --output <file>     Write serialized model to a file");
     println!("  --pretty            Pretty-print JSON output");
+    println!("  GUI                 cargo run --features gui --bin femreader_gui -- <input_directory>");
 }

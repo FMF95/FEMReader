@@ -38,6 +38,7 @@ impl DependencyResolver for DefaultDependencyResolver {
         let mut files = scan_result.files.clone();
         let mut edges = Vec::new();
         let mut unresolved_references = Vec::new();
+        let directory_solver_hints = build_directory_solver_hints(scan_result);
 
         let mut by_path: HashMap<PathBuf, String> = HashMap::new();
         for file in &files {
@@ -45,11 +46,15 @@ impl DependencyResolver for DefaultDependencyResolver {
         }
 
         for file in &mut files {
+            file.solver_hint = file
+                .path
+                .parent()
+                .and_then(|parent| directory_solver_hints.get(parent).cloned())
+                .unwrap_or(crate::model::SolverKind::Unknown);
+
             let Some(adapter) = self.adapter_for_path(&file.path) else {
                 continue;
             };
-
-            file.solver_hint = adapter.solver_kind();
 
             let content = match fs::read_to_string(&file.path) {
                 Ok(content) => content,
@@ -76,6 +81,66 @@ impl DependencyResolver for DefaultDependencyResolver {
             unresolved_references,
         }
     }
+}
+
+#[derive(Debug, Default, Clone, Copy)]
+struct DirectorySolverPresence {
+    has_nastran: bool,
+    has_optistruct: bool,
+    has_abaqus: bool,
+}
+
+impl DirectorySolverPresence {
+    fn register_extension(&mut self, extension: Option<&str>) {
+        match extension {
+            Some("bdf") => self.has_nastran = true,
+            Some("fem") => self.has_optistruct = true,
+            Some("inp") => self.has_abaqus = true,
+            _ => {}
+        }
+    }
+
+    fn to_solver_kind(self) -> crate::model::SolverKind {
+        let mut total = 0;
+        if self.has_nastran {
+            total += 1;
+        }
+        if self.has_optistruct {
+            total += 1;
+        }
+        if self.has_abaqus {
+            total += 1;
+        }
+
+        if total != 1 {
+            return crate::model::SolverKind::Unknown;
+        }
+
+        if self.has_nastran {
+            crate::model::SolverKind::Nastran
+        } else if self.has_optistruct {
+            crate::model::SolverKind::OptiStruct
+        } else {
+            crate::model::SolverKind::Abaqus
+        }
+    }
+}
+
+fn build_directory_solver_hints(
+    scan_result: &ScanResult,
+) -> HashMap<PathBuf, crate::model::SolverKind> {
+    let mut by_directory = HashMap::<PathBuf, DirectorySolverPresence>::new();
+
+    for file in &scan_result.files {
+        let parent = file.path.parent().unwrap_or(&scan_result.root_directory);
+        let entry = by_directory.entry(parent.to_path_buf()).or_default();
+        entry.register_extension(file.extension.as_deref());
+    }
+
+    by_directory
+        .into_iter()
+        .map(|(directory, presence)| (directory, presence.to_solver_kind()))
+        .collect()
 }
 
 fn resolve_reference_path(base_file: &Path, reference: &str) -> PathBuf {

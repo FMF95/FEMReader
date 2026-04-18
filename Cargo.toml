@@ -3,4 +3,14 @@ name = "femreader"
 version = "0.1.0"
 edition = "2024"
 
+[features]
+default = []
+gui = ["dep:eframe"]
+
 [dependencies]
+eframe = { version = "0.31", default-features = false, features = ["default_fonts", "wgpu"], optional = true }
+
+[[bin]]
+name = "femreader_gui"
+path = "src/bin/femreader_gui.rs"
+required-features = ["gui"]

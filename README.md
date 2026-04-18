@@ -1,52 +1,60 @@
 # FEMReader
 
-Finite element model reader focused on speed, adaptability, and consistency.
+Lector de modelos FEM en Rust, orientado a escaneo rápido, resolución de dependencias y salida consistente para integración con otras herramientas.
 
-## Current implementation
+## Funcionalidades principales
 
-This repository now includes a Rust implementation with:
+- **Core library** para escaneo de archivos, resolución de referencias y ensamblado de modelos.
+- **CLI** para procesar un directorio y exportar JSON versionado.
+- **Cache incremental** (`.femreader-cache`) para evitar reprocesar archivos no modificados.
+- **GUI de escritorio** para visualizar modelos, archivos y dependencias.
+- **Identificación automática de solver por directorio**:
+  - `.fem` -> `OptiStruct`
+  - `.bdf` -> `NASTRAN`
+  - `.inp` -> `ABAQUS`
+  - Si en el mismo directorio aparecen dos o más de esas extensiones, el solver se marca como `Unknown`.
 
-- **Core library** for filesystem scanning, dependency resolution, and model assembly.
-- **CLI executable** that accepts a directory as input and emits a versioned JSON output.
-- **Incremental cache** (`.femreader-cache`) to avoid reprocessing unchanged files.
-- **Solver adapter architecture** with initial adapters for:
-  - NASTRAN
-  - OptiStruct
-  - ABAQUS
+## Requisitos
 
-## Architecture
+- Rust + Cargo (toolchain estable).
 
-The code is organized in modules under `src/`:
+## Uso rápido (CLI)
 
-- `scanner`: filesystem I/O, directory/file mapping, metadata normalization.
-- `dependency`: include/reference extraction and dependency graph construction.
-- `assembler`: model candidate creation from dependency relationships.
-- `solver`: shared adapter trait + solver-specific adapters.
-- `serializer`: versioned JSON serialization for inter-language integration.
-- `cache`: incremental change tracking by path + metadata.
-- `pipeline`: orchestration of scanner -> dependencies -> model assembly.
-
-Main entities include:
-
-- Filesystem entities: `DirectoryNode`, `FileNode`, `DependencyEdge`
-- FEM domain entities: `Model`, `ModelContent`
-- Transport/output entity: versioned `ModelContent` JSON payload
-
-## CLI usage
+Imprimir JSON en consola:
 
 ```bash
-cargo run -- /absolute/path/to/models --pretty
+cargo run -- /ruta/absoluta/a/modelos --pretty
 ```
 
-Optional output file:
+Guardar JSON en archivo:
 
 ```bash
-cargo run -- /absolute/path/to/models --output /absolute/path/to/output.json --pretty
+cargo run -- /ruta/absoluta/a/modelos --output /ruta/absoluta/salida.json --pretty
 ```
 
-## Output contract
+Ayuda:
 
-The CLI emits a versioned JSON with:
+```bash
+cargo run -- --help
+```
+
+## Uso de la GUI
+
+Lanzar la interfaz gráfica:
+
+```bash
+cargo run --features gui --bin femreader_gui -- /ruta/absoluta/a/modelos
+```
+
+En la GUI puedes:
+
+- Cargar un directorio de modelos.
+- Ver resumen de directorios, archivos, dependencias y referencias sin resolver.
+- Seleccionar cada modelo y revisar sus archivos, solver detectado y relaciones de dependencia.
+
+## Contrato de salida JSON
+
+La salida serializada incluye:
 
 - `schema_version`
 - `root_directory`
@@ -56,23 +64,14 @@ The CLI emits a versioned JSON with:
 - `unresolved_references`
 - `models`
 
-This keeps integration simple for other languages through file-based or process-based interoperability.
+## Desarrollo y arquitectura
 
-## Testing
+Consulta la guía técnica para desarrolladores:
 
-Run:
+- `DEVELOPER_GUIDE.md`
+
+## Tests
 
 ```bash
 cargo test
 ```
-
-Integration tests cover:
-
-- model detection with shared dependencies
-- incremental cache behavior
-
-## Next steps
-
-- Extend solver-specific parsing rules and robustness for real-world decks.
-- Add richer FEM content entities (`Element`, `Node`, `Material`, etc.).
-- Add GUI/debug viewer consuming the core output (without parse logic duplication).
