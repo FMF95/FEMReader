@@ -16,7 +16,7 @@ This repository now includes a Rust implementation with:
 
 ## Architecture
 
-The code is organized in modules under `/home/runner/work/FEMReader/FEMReader/src`:
+The code is organized in modules under `src/`:
 
 - `scanner`: filesystem I/O, directory/file mapping, metadata normalization.
 - `dependency`: include/reference extraction and dependency graph construction.
