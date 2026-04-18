@@ -1,4 +1,4 @@
-use crate::model::{DependencyEdge, FileNode, SolverKind};
+use crate::model::{DependencyEdge, FileNode};
 use crate::scanner::ScanResult;
 use crate::solver::SolverAdapter;
 use std::collections::HashMap;
@@ -91,14 +91,4 @@ fn resolve_reference_path(base_file: &Path, reference: &str) -> PathBuf {
     };
 
     fs::canonicalize(&candidate).unwrap_or(candidate)
-}
-
-#[allow(dead_code)]
-fn _solver_name(kind: &SolverKind) -> &'static str {
-    match kind {
-        SolverKind::Unknown => "Unknown",
-        SolverKind::Nastran => "NASTRAN",
-        SolverKind::OptiStruct => "OptiStruct",
-        SolverKind::Abaqus => "ABAQUS",
-    }
 }
