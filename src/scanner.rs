@@ -1,5 +1,6 @@
 use crate::cache::IncrementalCache;
-use crate::model::{DirectoryNode, FileNode, SolverKind};
+use crate::model::{DirectoryNode, FileCategory, FileNode, SolverKind};
+use crate::solver::is_model_file_path;
 use std::collections::VecDeque;
 use std::fs;
 use std::io;
@@ -69,6 +70,11 @@ impl FileSystemScanner for DefaultFileSystemScanner {
                         size,
                         modified_unix_secs,
                         changed_since_last_scan: changed,
+                        category: if is_model_file_path(&path) {
+                            FileCategory::Model
+                        } else {
+                            FileCategory::NonModel
+                        },
                         solver_hint: SolverKind::Unknown,
                     });
                 }

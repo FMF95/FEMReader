@@ -2,12 +2,14 @@ use eframe::egui::{self, Color32, RichText};
 use femreader::assembler::DefaultModelAssembler;
 use femreader::cache::IncrementalCache;
 use femreader::dependency::DefaultDependencyResolver;
-use femreader::model::{Model, ModelContent, SolverKind};
+use femreader::model::{
+    FileCategory, Model, ModelContent, OptiStructCardKind, OptiStructItem, SolverKind,
+};
 use femreader::pipeline::ReaderPipeline;
 use femreader::scanner::DefaultFileSystemScanner;
 use femreader::serializer::JsonSerializer;
 use femreader::solver::{AbaqusAdapter, NastranAdapter, OptiStructAdapter, SolverAdapter};
-use std::collections::HashSet;
+use std::collections::{BTreeMap, HashSet};
 use std::path::{Path, PathBuf};
 
 fn main() -> eframe::Result<()> {
@@ -34,6 +36,7 @@ struct FemReaderGuiApp {
     selected_model_index: Option<usize>,
     status_message: String,
     error_message: Option<String>,
+    delete_cache_after_load: bool,
 }
 
 impl FemReaderGuiApp {
@@ -44,6 +47,7 @@ impl FemReaderGuiApp {
             selected_model_index: None,
             status_message: String::new(),
             error_message: None,
+            delete_cache_after_load: false,
         }
     }
 
@@ -66,15 +70,28 @@ impl FemReaderGuiApp {
             return;
         }
 
-        match run_pipeline(&input) {
+        match run_pipeline(&input, self.delete_cache_after_load) {
             Ok(content) => {
+                let model_files = content
+                    .files
+                    .iter()
+                    .filter(|file| file.category == FileCategory::Model)
+                    .count();
+                let non_model_files = content.files.len().saturating_sub(model_files);
+                let optistruct_items = content.optistruct_items.len();
                 self.status_message = format!(
-                    "Cargado: {} modelos, {} archivos, {} dependencias.",
+                    "Cargado: {} modelos, {} archivos de modelo, {} archivos no modelo, {} dependencias, {} items OptiStruct.",
                     content.models.len(),
-                    content.files.len(),
-                    content.dependencies.len()
+                    model_files,
+                    non_model_files,
+                    content.dependencies.len(),
+                    optistruct_items
                 );
-                self.selected_model_index = if content.models.is_empty() { None } else { Some(0) };
+                self.selected_model_index = if content.models.is_empty() {
+                    None
+                } else {
+                    Some(0)
+                };
                 self.content = Some(content);
             }
             Err(error) => {
@@ -92,29 +109,115 @@ impl FemReaderGuiApp {
         ui.separator();
 
         ui.collapsing("Archivos del modelo", |ui| {
-            egui::ScrollArea::vertical().max_height(220.0).show(ui, |ui| {
-                for file_id in &model.file_ids {
-                    ui.label(file_id);
-                }
-            });
+            egui::ScrollArea::vertical()
+                .max_height(220.0)
+                .show(ui, |ui| {
+                    for file_id in &model.file_ids {
+                        ui.label(file_id);
+                    }
+                });
         });
 
         let model_file_ids: HashSet<&str> = model.file_ids.iter().map(String::as_str).collect();
 
         ui.collapsing("Dependencias del modelo", |ui| {
-            egui::ScrollArea::vertical().max_height(220.0).show(ui, |ui| {
-                for edge in &content.dependencies {
-                    if model_file_ids.contains(edge.from_file_id.as_str())
-                        || model_file_ids.contains(edge.to_file_id.as_str())
-                    {
-                        ui.label(format!(
-                            "{} -> {} ({})",
-                            edge.from_file_id, edge.to_file_id, edge.reference
-                        ));
+            egui::ScrollArea::vertical()
+                .max_height(220.0)
+                .show(ui, |ui| {
+                    for edge in &content.dependencies {
+                        if model_file_ids.contains(edge.from_file_id.as_str())
+                            || model_file_ids.contains(edge.to_file_id.as_str())
+                        {
+                            ui.label(format!(
+                                "{} -> {} ({})",
+                                edge.from_file_id, edge.to_file_id, edge.reference
+                            ));
+                        }
                     }
+                });
+        });
+
+        ui.collapsing("Estructura OptiStruct (visual)", |ui| {
+            Self::render_optistruct_structure(ui, content, model);
+        });
+    }
+
+    fn render_optistruct_structure(ui: &mut egui::Ui, content: &ModelContent, model: &Model) {
+        let model_file_ids: HashSet<&str> = model.file_ids.iter().map(String::as_str).collect();
+        let mut grouped = BTreeMap::<String, Vec<&OptiStructItem>>::new();
+
+        for item in &content.optistruct_items {
+            let (file_id, file_path) = match item {
+                OptiStructItem::Comment(comment) => (
+                    comment.location.file_id.as_str(),
+                    comment.location.file_path.display().to_string(),
+                ),
+                OptiStructItem::Card(card) => (
+                    card.location.file_id.as_str(),
+                    card.location.file_path.display().to_string(),
+                ),
+            };
+
+            if model_file_ids.contains(file_id) {
+                grouped.entry(file_path).or_default().push(item);
+            }
+        }
+
+        if grouped.is_empty() {
+            ui.label("No hay tarjetas/comentarios OptiStruct para este modelo.");
+            return;
+        }
+
+        egui::ScrollArea::vertical()
+            .max_height(300.0)
+            .show(ui, |ui| {
+                for (file_path, mut items) in grouped {
+                    items.sort_by_key(|item| match item {
+                        OptiStructItem::Comment(comment) => comment.location.ordinal,
+                        OptiStructItem::Card(card) => card.location.ordinal,
+                    });
+
+                    ui.collapsing(file_path, |ui| {
+                        for item in items {
+                            match item {
+                                OptiStructItem::Comment(comment) => {
+                                    ui.label(format!(
+                                        "L{} [COMMENT] {}",
+                                        comment.location.start_line, comment.text
+                                    ));
+                                }
+                                OptiStructItem::Card(card) => {
+                                    let line_label =
+                                        if card.location.start_line == card.location.end_line {
+                                            format!("L{}", card.location.start_line)
+                                        } else {
+                                            format!(
+                                                "L{}-L{}",
+                                                card.location.start_line, card.location.end_line
+                                            )
+                                        };
+                                    ui.collapsing(
+                                        format!(
+                                            "{} [{}] {}",
+                                            line_label,
+                                            if card.long_format { "LONG" } else { "SHORT" },
+                                            card_kind_summary(&card.kind)
+                                        ),
+                                        |ui| {
+                                            ui.label(format!("Tarjeta: {}", card.card_name));
+                                            ui.label(format!("Ordinal: {}", card.location.ordinal));
+                                            ui.label("Campos:");
+                                            for (index, value) in card.fields.iter().enumerate() {
+                                                ui.label(format!("  F{} = {}", index + 1, value));
+                                            }
+                                        },
+                                    );
+                                }
+                            }
+                        }
+                    });
                 }
             });
-        });
     }
 }
 
@@ -126,6 +229,10 @@ impl eframe::App for FemReaderGuiApp {
                 let text_edit = ui.text_edit_singleline(&mut self.input_directory);
                 let pressed_enter =
                     text_edit.lost_focus() && ui.input(|input| input.key_pressed(egui::Key::Enter));
+                ui.checkbox(
+                    &mut self.delete_cache_after_load,
+                    "Eliminar cache tras leer (.femreader-cache)",
+                );
 
                 if ui.button("Cargar").clicked() || pressed_enter {
                     self.load_content();
@@ -153,7 +260,21 @@ impl eframe::App for FemReaderGuiApp {
                 columns[0].label(format!("Root: {}", content.root_directory.display()));
                 columns[0].label(format!("Directorios: {}", content.directories.len()));
                 columns[0].label(format!("Archivos: {}", content.files.len()));
+                let model_files = content
+                    .files
+                    .iter()
+                    .filter(|file| file.category == FileCategory::Model)
+                    .count();
+                columns[0].label(format!("Archivos de modelo: {}", model_files));
+                columns[0].label(format!(
+                    "Archivos no modelo: {}",
+                    content.files.len().saturating_sub(model_files)
+                ));
                 columns[0].label(format!("Dependencias: {}", content.dependencies.len()));
+                columns[0].label(format!(
+                    "Items OptiStruct: {}",
+                    content.optistruct_items.len()
+                ));
                 columns[0].label(format!(
                     "Referencias sin resolver: {}",
                     content.unresolved_references.len()
@@ -179,12 +300,27 @@ impl eframe::App for FemReaderGuiApp {
                     });
 
                 columns[0].separator();
+                columns[0].collapsing("Archivos no modelo", |ui| {
+                    egui::ScrollArea::vertical()
+                        .max_height(160.0)
+                        .show(ui, |ui| {
+                            for file in &content.files {
+                                if file.category == FileCategory::NonModel {
+                                    ui.label(file.path.display().to_string());
+                                }
+                            }
+                        });
+                });
+
+                columns[0].separator();
                 columns[0].collapsing("Referencias sin resolver", |ui| {
-                    egui::ScrollArea::vertical().max_height(200.0).show(ui, |ui| {
-                        for unresolved in &content.unresolved_references {
-                            ui.label(unresolved);
-                        }
-                    });
+                    egui::ScrollArea::vertical()
+                        .max_height(200.0)
+                        .show(ui, |ui| {
+                            for unresolved in &content.unresolved_references {
+                                ui.label(unresolved);
+                            }
+                        });
                 });
 
                 columns[1].heading("Detalle del modelo");
@@ -203,7 +339,10 @@ impl eframe::App for FemReaderGuiApp {
     }
 }
 
-fn run_pipeline(root_directory: &Path) -> Result<ModelContent, String> {
+fn run_pipeline(
+    root_directory: &Path,
+    delete_cache_after_run: bool,
+) -> Result<ModelContent, String> {
     let mut cache_path = root_directory.to_path_buf();
     cache_path.push(".femreader-cache");
     let mut cache = IncrementalCache::load(&cache_path)
@@ -226,9 +365,14 @@ fn run_pipeline(root_directory: &Path) -> Result<ModelContent, String> {
         .run(root_directory, &mut cache)
         .map_err(|e| format!("Falló la ejecución del lector: {e}"))?;
 
-    cache
-        .save(&cache_path)
-        .map_err(|e| format!("No se pudo guardar cache {}: {e}", cache_path.display()))?;
+    if delete_cache_after_run {
+        IncrementalCache::remove_file(&cache_path)
+            .map_err(|e| format!("No se pudo eliminar cache {}: {e}", cache_path.display()))?;
+    } else {
+        cache
+            .save(&cache_path)
+            .map_err(|e| format!("No se pudo guardar cache {}: {e}", cache_path.display()))?;
+    }
 
     Ok(content)
 }
@@ -239,5 +383,32 @@ fn solver_label(kind: &SolverKind) -> &'static str {
         SolverKind::Nastran => "NASTRAN",
         SolverKind::OptiStruct => "OptiStruct",
         SolverKind::Abaqus => "ABAQUS",
+    }
+}
+
+fn card_kind_summary(kind: &OptiStructCardKind) -> String {
+    match kind {
+        OptiStructCardKind::Grid(card) => format!(
+            "GRID id={:?} xyz=({:?}, {:?}, {:?})",
+            card.id, card.x1, card.x2, card.x3
+        ),
+        OptiStructCardKind::Cquad4(card) => format!(
+            "CQUAD4 id={:?} pid={:?} g=({:?},{:?},{:?},{:?})",
+            card.id, card.pid, card.g1, card.g2, card.g3, card.g4
+        ),
+        OptiStructCardKind::Ctria3(card) => format!(
+            "CTRIA3 id={:?} pid={:?} g=({:?},{:?},{:?})",
+            card.id, card.pid, card.g1, card.g2, card.g3
+        ),
+        OptiStructCardKind::Force(card) => format!(
+            "FORCE sid={:?} g={:?} f={:?} n=({:?},{:?},{:?})",
+            card.sid, card.g, card.f, card.n1, card.n2, card.n3
+        ),
+        OptiStructCardKind::Moment(card) => format!(
+            "MOMENT sid={:?} g={:?} m={:?} n=({:?},{:?},{:?})",
+            card.sid, card.g, card.m, card.n1, card.n2, card.n3
+        ),
+        OptiStructCardKind::Include(card) => format!("INCLUDE target={}", card.target),
+        OptiStructCardKind::Unknown(card) => format!("{} (sin parser específico)", card.card_name),
     }
 }

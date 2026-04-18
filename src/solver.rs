@@ -1,4 +1,6 @@
 use crate::model::SolverKind;
+use crate::optistruct;
+use std::collections::HashSet;
 use std::path::Path;
 
 pub trait SolverAdapter {
@@ -21,6 +23,17 @@ fn extension_of(path: &Path) -> String {
         .unwrap_or_default()
 }
 
+pub fn is_model_file_path(path: &Path) -> bool {
+    if path.extension().is_none() {
+        return true;
+    }
+
+    matches!(
+        extension_of(path).as_str(),
+        "bdf" | "fem" | "inp" | "dat" | "inc" | "nas" | "aba"
+    )
+}
+
 fn parse_include_like_references(content: &str) -> Vec<String> {
     let mut references = Vec::new();
 
@@ -41,6 +54,19 @@ fn parse_include_like_references(content: &str) -> Vec<String> {
     }
 
     references
+}
+
+fn dedupe_preserving_order(values: Vec<String>) -> Vec<String> {
+    let mut seen = HashSet::new();
+    let mut deduped = Vec::new();
+
+    for value in values {
+        if seen.insert(value.clone()) {
+            deduped.push(value);
+        }
+    }
+
+    deduped
 }
 
 fn extract_reference(line: &str) -> Option<String> {
@@ -101,11 +127,13 @@ impl SolverAdapter for OptiStructAdapter {
     }
 
     fn supports_file(&self, path: &Path) -> bool {
-        matches!(extension_of(path).as_str(), "fem" | "dat" | "inc")
+        path.extension().is_none() || matches!(extension_of(path).as_str(), "fem" | "dat" | "inc")
     }
 
     fn extract_references(&self, content: &str) -> Vec<String> {
-        parse_include_like_references(content)
+        let mut references = optistruct::extract_include_references(content);
+        references.extend(parse_include_like_references(content));
+        dedupe_preserving_order(references)
     }
 }
 

@@ -55,7 +55,16 @@ impl IncrementalCache {
             ));
         }
         lines.sort();
-        fs::write(path, lines.join("\n"))
+        fs::write(path, lines.join("\n"))?;
+        mark_hidden_if_supported(path)
+    }
+
+    pub fn remove_file(path: &Path) -> io::Result<()> {
+        match fs::remove_file(path) {
+            Ok(()) => Ok(()),
+            Err(error) if error.kind() == io::ErrorKind::NotFound => Ok(()),
+            Err(error) => Err(error),
+        }
     }
 
     pub fn is_changed(&self, key: &str, modified_unix_secs: u64, size: u64) -> bool {
@@ -74,4 +83,26 @@ impl IncrementalCache {
             },
         );
     }
+}
+
+#[cfg(windows)]
+fn mark_hidden_if_supported(path: &Path) -> io::Result<()> {
+    let status = std::process::Command::new("attrib")
+        .arg("+H")
+        .arg(path)
+        .status()?;
+
+    if status.success() {
+        Ok(())
+    } else {
+        Err(io::Error::other(format!(
+            "Unable to mark cache as hidden: {}",
+            path.display()
+        )))
+    }
+}
+
+#[cfg(not(windows))]
+fn mark_hidden_if_supported(_: &Path) -> io::Result<()> {
+    Ok(())
 }

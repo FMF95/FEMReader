@@ -1,5 +1,5 @@
 use crate::dependency::DependencyGraph;
-use crate::model::{Model, ModelContent, SolverKind};
+use crate::model::{FileCategory, Model, ModelContent, SolverKind};
 use crate::scanner::ScanResult;
 use std::collections::{HashMap, HashSet};
 
@@ -15,19 +15,27 @@ impl ModelAssembler for DefaultModelAssembler {
         let mut incoming = HashMap::<String, usize>::new();
         let mut adjacency = HashMap::<String, Vec<String>>::new();
         let mut id_to_solver = HashMap::<String, SolverKind>::new();
+        let model_files: Vec<_> = graph
+            .files
+            .iter()
+            .filter(|file| file.category == FileCategory::Model)
+            .collect();
 
-        for file in &graph.files {
+        for file in &model_files {
             incoming.entry(file.id.clone()).or_insert(0);
             adjacency.entry(file.id.clone()).or_default();
             id_to_solver.insert(file.id.clone(), file.solver_hint.clone());
         }
 
         for edge in &graph.edges {
-            *incoming.entry(edge.to_file_id.clone()).or_insert(0) += 1;
-            adjacency
-                .entry(edge.from_file_id.clone())
-                .or_default()
-                .push(edge.to_file_id.clone());
+            if incoming.contains_key(&edge.from_file_id) && incoming.contains_key(&edge.to_file_id)
+            {
+                *incoming.entry(edge.to_file_id.clone()).or_insert(0) += 1;
+                adjacency
+                    .entry(edge.from_file_id.clone())
+                    .or_default()
+                    .push(edge.to_file_id.clone());
+            }
         }
 
         let mut roots: Vec<String> = incoming
@@ -42,7 +50,7 @@ impl ModelAssembler for DefaultModelAssembler {
             .collect();
 
         if roots.is_empty() {
-            roots = graph.files.iter().map(|file| file.id.clone()).collect();
+            roots = model_files.iter().map(|file| file.id.clone()).collect();
         }
 
         roots.sort();
@@ -88,6 +96,7 @@ impl ModelAssembler for DefaultModelAssembler {
             files: graph.files.clone(),
             dependencies: graph.edges.clone(),
             unresolved_references: graph.unresolved_references.clone(),
+            optistruct_items: graph.optistruct_items.clone(),
             models,
         }
     }

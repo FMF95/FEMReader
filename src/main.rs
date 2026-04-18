@@ -34,6 +34,7 @@ fn run() -> Result<(), String> {
 
     let mut output_file: Option<PathBuf> = None;
     let mut pretty = false;
+    let mut delete_cache = false;
 
     let mut index = 2;
     while index < args.len() {
@@ -47,6 +48,10 @@ fn run() -> Result<(), String> {
             }
             "--pretty" => {
                 pretty = true;
+                index += 1;
+            }
+            "--delete-cache" => {
+                delete_cache = true;
                 index += 1;
             }
             unknown => {
@@ -78,9 +83,14 @@ fn run() -> Result<(), String> {
         .run_and_serialize(&input_dir, &mut cache, pretty)
         .map_err(|e| format!("Reader execution failed: {e}"))?;
 
-    cache
-        .save(&cache_path)
-        .map_err(|e| format!("Unable to save cache {}: {e}", cache_path.display()))?;
+    if delete_cache {
+        IncrementalCache::remove_file(&cache_path)
+            .map_err(|e| format!("Unable to delete cache {}: {e}", cache_path.display()))?;
+    } else {
+        cache
+            .save(&cache_path)
+            .map_err(|e| format!("Unable to save cache {}: {e}", cache_path.display()))?;
+    }
 
     if let Some(path) = output_file {
         fs::write(&path, output)
@@ -93,9 +103,12 @@ fn run() -> Result<(), String> {
 }
 
 fn print_help() {
-    println!("femreader <input_directory> [--output <output_file>] [--pretty]");
+    println!("femreader <input_directory> [--output <output_file>] [--pretty] [--delete-cache]");
     println!("  <input_directory>   Root directory to scan");
     println!("  --output <file>     Write serialized model to a file");
     println!("  --pretty            Pretty-print JSON output");
-    println!("  GUI                 cargo run --features gui --bin femreader_gui -- <input_directory>");
+    println!("  --delete-cache      Remove .femreader-cache after reading models");
+    println!(
+        "  GUI                 cargo run --features gui --bin femreader_gui -- <input_directory>"
+    );
 }

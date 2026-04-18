@@ -1,4 +1,5 @@
-use crate::model::{DependencyEdge, FileNode};
+use crate::model::{DependencyEdge, FileCategory, FileNode, OptiStructItem, SolverKind};
+use crate::optistruct;
 use crate::scanner::ScanResult;
 use crate::solver::SolverAdapter;
 use std::collections::HashMap;
@@ -10,6 +11,7 @@ pub struct DependencyGraph {
     pub files: Vec<FileNode>,
     pub edges: Vec<DependencyEdge>,
     pub unresolved_references: Vec<String>,
+    pub optistruct_items: Vec<OptiStructItem>,
 }
 
 pub trait DependencyResolver {
@@ -25,11 +27,28 @@ impl DefaultDependencyResolver {
         Self { adapters }
     }
 
-    fn adapter_for_path(&self, path: &Path) -> Option<&(dyn SolverAdapter + Send + Sync)> {
-        self.adapters
+    fn adapter_for_file(&self, file: &FileNode) -> Option<&(dyn SolverAdapter + Send + Sync)> {
+        let mut matching: Vec<&(dyn SolverAdapter + Send + Sync)> = self
+            .adapters
             .iter()
-            .find(|adapter| adapter.supports_file(path))
+            .filter(|adapter| adapter.supports_file(&file.path))
             .map(|adapter| adapter.as_ref())
+            .collect();
+
+        if matching.is_empty() {
+            return None;
+        }
+
+        if file.solver_hint != SolverKind::Unknown
+            && let Some(preferred) = matching
+                .iter()
+                .copied()
+                .find(|adapter| adapter.solver_kind() == file.solver_hint)
+        {
+            return Some(preferred);
+        }
+
+        Some(matching.remove(0))
     }
 }
 
@@ -38,21 +57,32 @@ impl DependencyResolver for DefaultDependencyResolver {
         let mut files = scan_result.files.clone();
         let mut edges = Vec::new();
         let mut unresolved_references = Vec::new();
+        let mut optistruct_items = Vec::new();
         let directory_solver_hints = build_directory_solver_hints(scan_result);
 
         let mut by_path: HashMap<PathBuf, String> = HashMap::new();
         for file in &files {
-            by_path.insert(file.path.clone(), file.id.clone());
+            if file.category == FileCategory::Model {
+                by_path.insert(file.path.clone(), file.id.clone());
+            }
         }
 
         for file in &mut files {
-            file.solver_hint = file
-                .path
-                .parent()
-                .and_then(|parent| directory_solver_hints.get(parent).cloned())
-                .unwrap_or(crate::model::SolverKind::Unknown);
+            if file.category == FileCategory::Model {
+                file.solver_hint = file
+                    .path
+                    .parent()
+                    .and_then(|parent| directory_solver_hints.get(parent).cloned())
+                    .unwrap_or(crate::model::SolverKind::Unknown);
+            } else {
+                file.solver_hint = SolverKind::Unknown;
+            }
 
-            let Some(adapter) = self.adapter_for_path(&file.path) else {
+            if file.category != FileCategory::Model {
+                continue;
+            }
+
+            let Some(adapter) = self.adapter_for_file(file) else {
                 continue;
             };
 
@@ -60,6 +90,11 @@ impl DependencyResolver for DefaultDependencyResolver {
                 Ok(content) => content,
                 Err(_) => continue,
             };
+
+            if adapter.solver_kind() == SolverKind::OptiStruct {
+                optistruct_items
+                    .extend(optistruct::parse_file_items(&file.id, &file.path, &content));
+            }
 
             for reference in adapter.extract_references(&content) {
                 let target = resolve_reference_path(&file.path, &reference);
@@ -79,6 +114,7 @@ impl DependencyResolver for DefaultDependencyResolver {
             files,
             edges,
             unresolved_references,
+            optistruct_items,
         }
     }
 }
@@ -132,6 +168,9 @@ fn build_directory_solver_hints(
     let mut by_directory = HashMap::<PathBuf, DirectorySolverPresence>::new();
 
     for file in &scan_result.files {
+        if file.category != FileCategory::Model {
+            continue;
+        }
         let parent = file.path.parent().unwrap_or(&scan_result.root_directory);
         let entry = by_directory.entry(parent.to_path_buf()).or_default();
         entry.register_extension(file.extension.as_deref());
