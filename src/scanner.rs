@@ -1,4 +1,5 @@
 use crate::cache::IncrementalCache;
+use crate::ids::{leaf_name, stable_id};
 use crate::model::{DirectoryNode, FileCategory, FileNode, SolverKind};
 use crate::solver::is_model_file_path;
 use std::collections::VecDeque;
@@ -31,9 +32,11 @@ impl FileSystemScanner for DefaultFileSystemScanner {
         queue.push_back(canonical_root.clone());
 
         while let Some(current_dir) = queue.pop_front() {
-            let dir_id = format!("dir:{}", current_dir.display());
+            let dir_source = current_dir.display().to_string();
+            let dir_id = stable_id("dir", &dir_source);
             directories.push(DirectoryNode {
                 id: dir_id,
+                name: leaf_name(&current_dir),
                 path: current_dir.clone(),
             });
 
@@ -48,6 +51,10 @@ impl FileSystemScanner for DefaultFileSystemScanner {
                 }
 
                 if metadata.is_file() {
+                    if is_internal_femreader_file(&path) {
+                        continue;
+                    }
+
                     let canonical_file = fs::canonicalize(&path).unwrap_or(path.clone());
                     let extension = canonical_file
                         .extension()
@@ -64,7 +71,8 @@ impl FileSystemScanner for DefaultFileSystemScanner {
                     cache.update(cache_key, modified_unix_secs, size);
 
                     files.push(FileNode {
-                        id: format!("file:{}", canonical_file.display()),
+                        id: stable_id("file", &canonical_file.display().to_string()),
+                        name: leaf_name(&canonical_file),
                         path: canonical_file,
                         extension,
                         size,
@@ -90,4 +98,13 @@ impl FileSystemScanner for DefaultFileSystemScanner {
             files,
         })
     }
+}
+
+fn is_internal_femreader_file(path: &Path) -> bool {
+    path.file_name()
+        .map(|name| {
+            name.to_string_lossy()
+                .eq_ignore_ascii_case(".femreader-cache")
+        })
+        .unwrap_or(false)
 }

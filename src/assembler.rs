@@ -1,4 +1,5 @@
 use crate::dependency::DependencyGraph;
+use crate::ids::stable_id;
 use crate::model::{FileCategory, Model, ModelContent, SolverKind};
 use crate::scanner::ScanResult;
 use std::collections::{HashMap, HashSet};
@@ -15,6 +16,7 @@ impl ModelAssembler for DefaultModelAssembler {
         let mut incoming = HashMap::<String, usize>::new();
         let mut adjacency = HashMap::<String, Vec<String>>::new();
         let mut id_to_solver = HashMap::<String, SolverKind>::new();
+        let mut id_to_name = HashMap::<String, String>::new();
         let model_files: Vec<_> = graph
             .files
             .iter()
@@ -25,6 +27,7 @@ impl ModelAssembler for DefaultModelAssembler {
             incoming.entry(file.id.clone()).or_insert(0);
             adjacency.entry(file.id.clone()).or_default();
             id_to_solver.insert(file.id.clone(), file.solver_hint.clone());
+            id_to_name.insert(file.id.clone(), file.name.clone());
         }
 
         for edge in &graph.edges {
@@ -79,10 +82,15 @@ impl ModelAssembler for DefaultModelAssembler {
 
             let solver = select_solver(&file_ids, &id_to_solver);
             let model_index = models.len() + 1;
+            let root_name = id_to_name
+                .get(&root_file_id)
+                .cloned()
+                .unwrap_or_else(|| format!("model_{model_index}"));
+            let model_source = format!("{}|{}", root_file_id, file_ids.join("|"));
 
             models.push(Model {
-                id: format!("model:{model_index}"),
-                name: format!("model_{model_index}"),
+                id: stable_id("model", &model_source),
+                name: root_name,
                 root_file_id,
                 file_ids,
                 solver,

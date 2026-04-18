@@ -1,7 +1,9 @@
 use crate::model::{
-    Cquad4Card, Ctria3Card, DependencyEdge, FileCategory, FileNode, ForceCard, GridCard,
-    IncludeCard, Model, ModelContent, MomentCard, OptiStructCardItem, OptiStructCardKind,
-    OptiStructCommentItem, OptiStructItem, OptiStructLocation, SolverKind, UnknownCard,
+    BeginBulkCard, Cquad4Card, Ctria3Card, DependencyEdge, EndDataCard, FileCategory, FileNode,
+    ForceCard, GridCard, HMDPrpCommentFields, HMMoveCommentFields, HMNameCommentFields,
+    HWColorCommentFields, HyperMeshCommentFields, IncludeCard, Model, ModelContent, MomentCard,
+    OptiStructCardItem, OptiStructCardKind, OptiStructCommentItem, OptiStructCommentKind,
+    OptiStructItem, OptiStructLocation, SolverKind, UnknownCard,
 };
 
 pub trait Serializer {
@@ -38,8 +40,9 @@ fn serialize_compact(content: &ModelContent) -> String {
             out.push(',');
         }
         out.push_str(&format!(
-            "{{\"id\":\"{}\",\"path\":\"{}\"}}",
+            "{{\"id\":\"{}\",\"name\":\"{}\",\"path\":\"{}\"}}",
             escape(&dir.id),
+            escape(&dir.name),
             escape(&dir.path.display().to_string())
         ));
     }
@@ -90,8 +93,23 @@ fn serialize_optistruct_item_compact(item: &OptiStructItem) -> String {
 }
 
 fn serialize_optistruct_comment_compact(comment: &OptiStructCommentItem) -> String {
+    let (item_type, comment_kind, hypermesh_tag, hypermesh_fields) = match &comment.kind {
+        OptiStructCommentKind::Comment => ("Comment", "Comment", None, None),
+        OptiStructCommentKind::HyperMeshComment { tag, fields } => (
+            "HyperMesh Comment",
+            "HyperMeshComment",
+            Some(tag.as_str()),
+            Some(serialize_hypermesh_comment_fields(fields)),
+        ),
+    };
+
     format!(
-        "{{\"type\":\"Comment\",\"location\":{},\"text\":\"{}\"}}",
+        "{{\"id\":\"{}\",\"type\":\"{}\",\"comment_kind\":\"{}\",\"hypermesh_tag\":{},\"hypermesh_fields\":{},\"location\":{},\"text\":\"{}\"}}",
+        escape(&comment.id),
+        item_type,
+        comment_kind,
+        serialize_opt_string(hypermesh_tag),
+        hypermesh_fields.unwrap_or_else(|| "null".to_string()),
         serialize_optistruct_location_compact(&comment.location),
         escape(&comment.text)
     )
@@ -109,7 +127,8 @@ fn serialize_optistruct_card_compact(card: &OptiStructCardItem) -> String {
     fields.push(']');
 
     format!(
-        "{{\"type\":\"Card\",\"location\":{},\"card_name\":\"{}\",\"long_format\":{},\"fields\":{},\"kind\":{},\"attributes\":{}}}",
+        "{{\"id\":\"{}\",\"type\":\"Card\",\"location\":{},\"card_name\":\"{}\",\"long_format\":{},\"fields\":{},\"kind\":{},\"attributes\":{}}}",
+        escape(&card.id),
         serialize_optistruct_location_compact(&card.location),
         escape(&card.card_name),
         if card.long_format { "true" } else { "false" },
@@ -119,10 +138,60 @@ fn serialize_optistruct_card_compact(card: &OptiStructCardItem) -> String {
     )
 }
 
+fn serialize_hypermesh_comment_fields(fields: &HyperMeshCommentFields) -> String {
+    match fields {
+        HyperMeshCommentFields::HMName(HMNameCommentFields {
+            entity_type,
+            id,
+            name,
+            id_pool,
+            raw_fields,
+        }) => format!(
+            "{{\"kind\":\"HMNAME\",\"entity_type\":{},\"id\":{},\"name\":{},\"id_pool\":{},\"raw_fields\":{}}}",
+            serialize_opt_string(entity_type.as_deref()),
+            serialize_opt_string(id.as_deref()),
+            serialize_opt_string(name.as_deref()),
+            serialize_opt_string(id_pool.as_deref()),
+            serialize_string_array(raw_fields)
+        ),
+        HyperMeshCommentFields::HWColor(HWColorCommentFields {
+            entity_type,
+            id,
+            color_id,
+            raw_fields,
+        }) => format!(
+            "{{\"kind\":\"HWCOLOR\",\"entity_type\":{},\"id\":{},\"color_id\":{},\"raw_fields\":{}}}",
+            serialize_opt_string(entity_type.as_deref()),
+            serialize_opt_string(id.as_deref()),
+            serialize_opt_string(color_id.as_deref()),
+            serialize_string_array(raw_fields)
+        ),
+        HyperMeshCommentFields::HMMove(HMMoveCommentFields {
+            collector_id,
+            raw_fields,
+        }) => format!(
+            "{{\"kind\":\"HMMOVE\",\"collector_id\":{},\"raw_fields\":{}}}",
+            serialize_opt_string(collector_id.as_deref()),
+            serialize_string_array(raw_fields)
+        ),
+        HyperMeshCommentFields::HMDPrp(HMDPrpCommentFields {
+            elements,
+            ids,
+            raw_fields,
+        }) => format!(
+            "{{\"kind\":\"HMDPRP\",\"elements\":{},\"ids\":{},\"raw_fields\":{}}}",
+            serialize_opt_string(elements.as_deref()),
+            serialize_string_array(ids),
+            serialize_string_array(raw_fields)
+        ),
+    }
+}
+
 fn serialize_optistruct_location_compact(location: &OptiStructLocation) -> String {
     format!(
-        "{{\"file_id\":\"{}\",\"file_path\":\"{}\",\"start_line\":{},\"end_line\":{},\"ordinal\":{}}}",
+        "{{\"file_id\":\"{}\",\"file_name\":\"{}\",\"file_path\":\"{}\",\"start_line\":{},\"end_line\":{},\"ordinal\":{}}}",
         escape(&location.file_id),
+        escape(&location.file_name),
         escape(&location.file_path.display().to_string()),
         location.start_line,
         location.end_line,
@@ -138,6 +207,8 @@ fn serialize_optistruct_kind_label(kind: &OptiStructCardKind) -> String {
         OptiStructCardKind::Force(_) => "FORCE",
         OptiStructCardKind::Moment(_) => "MOMENT",
         OptiStructCardKind::Include(_) => "INCLUDE",
+        OptiStructCardKind::BeginBulk(_) => "BEGIN BULK",
+        OptiStructCardKind::EndData(_) => "ENDDATA",
         OptiStructCardKind::Unknown(_) => "UNKNOWN",
     };
     format!("\"{label}\"")
@@ -151,6 +222,8 @@ fn serialize_optistruct_card_attributes(kind: &OptiStructCardKind) -> String {
         OptiStructCardKind::Force(card) => serialize_force_card(card),
         OptiStructCardKind::Moment(card) => serialize_moment_card(card),
         OptiStructCardKind::Include(card) => serialize_include_card(card),
+        OptiStructCardKind::BeginBulk(card) => serialize_begin_bulk_card(card),
+        OptiStructCardKind::EndData(card) => serialize_enddata_card(card),
         OptiStructCardKind::Unknown(card) => serialize_unknown_card(card),
     }
 }
@@ -235,6 +308,14 @@ fn serialize_include_card(card: &IncludeCard) -> String {
     format!("{{\"target\":\"{}\"}}", escape(&card.target))
 }
 
+fn serialize_begin_bulk_card(_: &BeginBulkCard) -> String {
+    "{}".to_string()
+}
+
+fn serialize_enddata_card(_: &EndDataCard) -> String {
+    "{}".to_string()
+}
+
 fn serialize_unknown_card(card: &UnknownCard) -> String {
     format!("{{\"card_name\":\"{}\"}}", escape(&card.card_name))
 }
@@ -257,10 +338,25 @@ fn serialize_opt_string(value: Option<&str>) -> String {
         .unwrap_or_else(|| "null".to_string())
 }
 
+fn serialize_string_array(values: &[String]) -> String {
+    let mut out = String::from("[");
+    for (index, value) in values.iter().enumerate() {
+        if index > 0 {
+            out.push(',');
+        }
+        out.push('"');
+        out.push_str(&escape(value));
+        out.push('"');
+    }
+    out.push(']');
+    out
+}
+
 fn serialize_file_compact(file: &FileNode) -> String {
     format!(
-        "{{\"id\":\"{}\",\"path\":\"{}\",\"extension\":{},\"size\":{},\"modified_unix_secs\":{},\"changed_since_last_scan\":{},\"category\":\"{}\",\"solver_hint\":\"{}\"}}",
+        "{{\"id\":\"{}\",\"name\":\"{}\",\"path\":\"{}\",\"extension\":{},\"size\":{},\"modified_unix_secs\":{},\"changed_since_last_scan\":{},\"category\":\"{}\",\"solver_hint\":\"{}\"}}",
         escape(&file.id),
+        escape(&file.name),
         escape(&file.path.display().to_string()),
         file.extension
             .as_ref()
@@ -280,7 +376,8 @@ fn serialize_file_compact(file: &FileNode) -> String {
 
 fn serialize_dep_compact(dep: &DependencyEdge) -> String {
     format!(
-        "{{\"from_file_id\":\"{}\",\"to_file_id\":\"{}\",\"reference\":\"{}\"}}",
+        "{{\"id\":\"{}\",\"from_file_id\":\"{}\",\"to_file_id\":\"{}\",\"reference\":\"{}\"}}",
+        escape(&dep.id),
         escape(&dep.from_file_id),
         escape(&dep.to_file_id),
         escape(&dep.reference)

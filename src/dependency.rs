@@ -1,3 +1,4 @@
+use crate::ids::stable_id;
 use crate::model::{DependencyEdge, FileCategory, FileNode, OptiStructItem, SolverKind};
 use crate::optistruct;
 use crate::scanner::ScanResult;
@@ -99,7 +100,15 @@ impl DependencyResolver for DefaultDependencyResolver {
             for reference in adapter.extract_references(&content) {
                 let target = resolve_reference_path(&file.path, &reference);
                 if let Some(target_id) = by_path.get(&target) {
+                    let edge_source = format!(
+                        "{}|{}|{}|{}",
+                        file.id,
+                        target_id,
+                        reference,
+                        edges.len() + 1
+                    );
                     edges.push(DependencyEdge {
+                        id: stable_id("dep", &edge_source),
                         from_file_id: file.id.clone(),
                         to_file_id: target_id.clone(),
                         reference,

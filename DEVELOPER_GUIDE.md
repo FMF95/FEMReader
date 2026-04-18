@@ -33,13 +33,17 @@ La meta es poder ampliar reglas de parsing/solver y salidas sin duplicar lógica
 1. **Scanner** (`DefaultFileSystemScanner`) recorre el árbol de directorios y crea:
    - `directories: Vec<DirectoryNode>`
    - `files: Vec<FileNode>` (con extensión, tamaño, timestamp, estado de cambio y categoría `Model`/`NonModel`)
+   - ignora archivos internos de FEMReader como `.femreader-cache`.
+   - genera IDs únicos determinísticos para `DirectoryNode.id` y `FileNode.id` (hash estable sin prefijos visibles).
 2. **DependencyResolver** (`DefaultDependencyResolver`) hace:
    - detección de solver por directorio;
    - lectura de contenido solo para archivos `Model` soportados por adaptadores;
    - extracción de referencias y resolución a paths canónicos;
    - lectura estructurada de OptiStruct (`optistruct_items`) con metadatos de archivo/línea.
+   - generación de IDs únicos para `DependencyEdge.id` (hash estable sin prefijos visibles).
    - construcción de `DependencyGraph`.
 3. **Assembler** (`DefaultModelAssembler`) detecta raíces del grafo y arma modelos solo con archivos `Model`.
+   - genera IDs únicos para `Model.id` (hash estable sin prefijos visibles).
 4. **Serializer** (`JsonSerializer`) genera JSON de salida.
 
 `ReaderPipeline` encapsula este flujo para reutilizarlo desde CLI y GUI.
@@ -81,6 +85,7 @@ Actualmente se usan para resolver dependencias, no para decidir solver de forma 
 - formato largo (16 caracteres por campo),
 - continuidad de tarjeta con línea que inicia por `*`,
 - identificación de comentarios con `$` (línea completa o inline).
+- detección robusta de `BEGIN BULK` (incluyendo formato libre con espacios variables).
 
 Además del `INCLUDE`, actualmente se tipan:
 
@@ -89,13 +94,37 @@ Además del `INCLUDE`, actualmente se tipan:
 - `CTRIA3`
 - `FORCE`
 - `MOMENT`
+- `BEGIN BULK`
+- `ENDDATA`
+
+Comentarios clasificados:
+
+- `Comment`
+- `HyperMesh Comment` para prefijos conocidos (`$HMNAME`, `$HWCOLOR`, `$HMMOVE`, `$HMDPRP`).
 
 Cada item parseado (`Comment` o `Card`) incluye:
 
+- id único del ítem (`id`),
 - archivo (`file_id`, `file_path`),
+- nombre de archivo (`file_name`),
 - posición (`start_line`, `end_line`),
 - orden estable dentro del archivo (`ordinal`),
 - campos crudos y versión tipada de la tarjeta.
+
+Campos HyperMesh parseados:
+
+- `HMNAME`: `entity_type`, `id`, `name`, `id_pool`
+- `HWCOLOR`: `entity_type`, `id`, `color_id`
+- `HMMOVE`: `collector_id`
+- `HMDPRP`: `elements`, `ids`
+
+Notas de parsing HyperMesh:
+
+- `HMNAME` soporta casos como `1"nombre"` (sin espacio entre `id` y comillas).
+- `HMMOVE` soporta continuidad en comentarios siguientes indentados, por ejemplo:
+  - `$HMMOVE        1`
+  - `$              1THRU         100`
+- `HMMOVE` y `HMDPRP` admiten continuidad multi-línea en formato de campos de 8 caracteres (`$` + indentación), acumulando líneas sucesivas hasta que el patrón de continuidad deja de cumplirse.
 
 Guía específica para extender tarjetas:
 
@@ -116,7 +145,7 @@ La GUI está implementada con `eframe/egui` y reutiliza el mismo pipeline:
 - lista modelos con solver detectado;
 - permite inspeccionar archivos del modelo y dependencias relacionadas;
 - muestra referencias no resueltas;
-- muestra la estructura de items OptiStruct por archivo (comentarios + tarjetas con líneas y campos);
+- muestra la estructura de items OptiStruct por archivo (comentarios clasificados + tarjetas con líneas y campos);
 - permite borrar la cache tras la carga.
 
 Diseño actual: visor de inspección y depuración. No modifica archivos del modelo.
@@ -139,6 +168,7 @@ Los tests de integración están en `tests/integration_reader.rs` y cubren:
 - filtrado del grafo para relacionar solo archivos de modelo;
 - borrado opcional de `.femreader-cache`.
 - parsing de tarjetas OptiStruct con metadatos de posición y tipado de tarjetas clave.
+- ignorar `.femreader-cache` como entrada de modelo.
 
 `src/optistruct.rs` incluye tests unitarios del parser de tarjetas y comentarios.
 

@@ -1,6 +1,9 @@
+use crate::ids::{leaf_name, stable_id};
 use crate::model::{
-    Cquad4Card, Ctria3Card, ForceCard, GridCard, IncludeCard, MomentCard, OptiStructCardItem,
-    OptiStructCardKind, OptiStructCommentItem, OptiStructItem, OptiStructLocation, UnknownCard,
+    BeginBulkCard, Cquad4Card, Ctria3Card, EndDataCard, ForceCard, GridCard, HMDPrpCommentFields,
+    HMMoveCommentFields, HMNameCommentFields, HWColorCommentFields, HyperMeshCommentFields,
+    IncludeCard, MomentCard, OptiStructCardItem, OptiStructCardKind, OptiStructCommentItem,
+    OptiStructCommentKind, OptiStructItem, OptiStructLocation, UnknownCard,
 };
 use std::path::Path;
 
@@ -15,39 +18,74 @@ struct RawCardRecord {
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 enum RawRecord {
-    Comment { line: usize, text: String },
+    Comment {
+        start_line: usize,
+        end_line: usize,
+        text: String,
+    },
     Card(RawCardRecord),
 }
 
 pub fn parse_file_items(file_id: &str, file_path: &Path, content: &str) -> Vec<OptiStructItem> {
     let records = parse_raw_records(content);
     let mut items = Vec::with_capacity(records.len());
+    let file_name = leaf_name(file_path);
 
     for (index, record) in records.into_iter().enumerate() {
         let ordinal = index + 1;
         match record {
-            RawRecord::Comment { line, text } => {
+            RawRecord::Comment {
+                start_line,
+                end_line,
+                text,
+            } => {
+                let location = OptiStructLocation {
+                    file_id: file_id.to_string(),
+                    file_name: file_name.clone(),
+                    file_path: file_path.to_path_buf(),
+                    start_line,
+                    end_line,
+                    ordinal,
+                };
+                let kind = classify_comment_kind(&text);
+                let item_id = stable_id(
+                    "osic",
+                    &format!(
+                        "{}|{}|{}|{}",
+                        location.file_id, location.start_line, location.ordinal, text
+                    ),
+                );
                 items.push(OptiStructItem::Comment(OptiStructCommentItem {
-                    location: OptiStructLocation {
-                        file_id: file_id.to_string(),
-                        file_path: file_path.to_path_buf(),
-                        start_line: line,
-                        end_line: line,
-                        ordinal,
-                    },
+                    id: item_id,
+                    location,
+                    kind,
                     text,
                 }));
             }
             RawRecord::Card(card) => {
                 let kind = parse_card_kind(&card.name, &card.fields);
+                let location = OptiStructLocation {
+                    file_id: file_id.to_string(),
+                    file_name: file_name.clone(),
+                    file_path: file_path.to_path_buf(),
+                    start_line: card.start_line,
+                    end_line: card.end_line,
+                    ordinal,
+                };
+                let item_id = stable_id(
+                    "osit",
+                    &format!(
+                        "{}|{}|{}|{}|{}",
+                        location.file_id,
+                        location.start_line,
+                        location.end_line,
+                        location.ordinal,
+                        card.name
+                    ),
+                );
                 items.push(OptiStructItem::Card(OptiStructCardItem {
-                    location: OptiStructLocation {
-                        file_id: file_id.to_string(),
-                        file_path: file_path.to_path_buf(),
-                        start_line: card.start_line,
-                        end_line: card.end_line,
-                        ordinal,
-                    },
+                    id: item_id,
+                    location,
                     card_name: card.name.clone(),
                     long_format: card.long_format,
                     fields: card.fields,
@@ -91,8 +129,13 @@ fn parse_raw_records(content: &str) -> Vec<RawRecord> {
         if payload.trim().is_empty() {
             flush_pending_card(&mut current_card, &mut records);
             if let Some(comment) = inline_comment {
+                if should_merge_comment_continuation(&comment, &records) {
+                    merge_comment_continuation(&comment, line_number, &mut records);
+                    continue;
+                }
                 records.push(RawRecord::Comment {
-                    line: line_number,
+                    start_line: line_number,
+                    end_line: line_number,
                     text: comment,
                 });
             }
@@ -105,7 +148,8 @@ fn parse_raw_records(content: &str) -> Vec<RawRecord> {
             }
             if let Some(comment) = inline_comment {
                 records.push(RawRecord::Comment {
-                    line: line_number,
+                    start_line: line_number,
+                    end_line: line_number,
                     text: comment,
                 });
             }
@@ -117,7 +161,8 @@ fn parse_raw_records(content: &str) -> Vec<RawRecord> {
 
         if let Some(comment) = inline_comment {
             records.push(RawRecord::Comment {
-                line: line_number,
+                start_line: line_number,
+                end_line: line_number,
                 text: comment,
             });
         }
@@ -126,7 +171,7 @@ fn parse_raw_records(content: &str) -> Vec<RawRecord> {
     flush_pending_card(&mut current_card, &mut records);
     records.sort_by_key(|record| match record {
         RawRecord::Card(card) => (card.start_line, 0usize),
-        RawRecord::Comment { line, .. } => (*line, 1usize),
+        RawRecord::Comment { start_line, .. } => (*start_line, 1usize),
     });
     records
 }
@@ -192,10 +237,131 @@ fn parse_card_kind(card_name: &str, fields: &[String]) -> OptiStructCardKind {
         "INCLUDE" => OptiStructCardKind::Include(IncludeCard {
             target: parse_include_target(fields).unwrap_or_default(),
         }),
+        "BEGIN" => {
+            if fields
+                .first()
+                .is_some_and(|field| field.eq_ignore_ascii_case("BULK"))
+            {
+                OptiStructCardKind::BeginBulk(BeginBulkCard)
+            } else {
+                OptiStructCardKind::Unknown(UnknownCard {
+                    card_name: card_name.to_string(),
+                })
+            }
+        }
+        "ENDDATA" => OptiStructCardKind::EndData(EndDataCard),
         _ => OptiStructCardKind::Unknown(UnknownCard {
             card_name: card_name.to_string(),
         }),
     }
+}
+
+fn classify_comment_kind(text: &str) -> OptiStructCommentKind {
+    const HYPERMESH_TAGS: [&str; 4] = ["HMNAME", "HWCOLOR", "HMMOVE", "HMDPRP"];
+    let normalized = normalize_comment_for_tokenization(text);
+    let tokens = tokenize_hypermesh_fields(&normalized);
+    let Some(tag) = tokens.first() else {
+        return OptiStructCommentKind::Comment;
+    };
+    let upper_tag = tag.to_ascii_uppercase();
+
+    if !HYPERMESH_TAGS.iter().any(|known| *known == upper_tag) {
+        return OptiStructCommentKind::Comment;
+    }
+
+    let field_tokens = tokens.into_iter().skip(1).collect::<Vec<_>>();
+    let fields = parse_hypermesh_comment_fields(&upper_tag, field_tokens);
+    OptiStructCommentKind::HyperMeshComment {
+        tag: upper_tag,
+        fields,
+    }
+}
+
+fn parse_hypermesh_comment_fields(tag: &str, tokens: Vec<String>) -> HyperMeshCommentFields {
+    match tag {
+        "HMNAME" => HyperMeshCommentFields::HMName(HMNameCommentFields {
+            entity_type: tokens.first().cloned(),
+            id: tokens.get(1).cloned(),
+            name: tokens.get(2).cloned(),
+            id_pool: tokens.get(3).cloned(),
+            raw_fields: tokens,
+        }),
+        "HWCOLOR" => HyperMeshCommentFields::HWColor(HWColorCommentFields {
+            entity_type: tokens.first().cloned(),
+            id: tokens.get(1).cloned(),
+            color_id: tokens.get(2).cloned(),
+            raw_fields: tokens,
+        }),
+        "HMMOVE" => HyperMeshCommentFields::HMMove(HMMoveCommentFields {
+            collector_id: tokens.first().cloned(),
+            raw_fields: tokens,
+        }),
+        "HMDPRP" => {
+            let first = tokens.first().cloned();
+            let first_is_keyword = first
+                .as_ref()
+                .is_some_and(|value| value.chars().all(|ch| ch.is_ascii_alphabetic()));
+            let (elements, ids) = if first_is_keyword {
+                (first, tokens.iter().skip(1).cloned().collect())
+            } else {
+                (None, tokens.clone())
+            };
+            HyperMeshCommentFields::HMDPrp(HMDPrpCommentFields {
+                elements,
+                ids,
+                raw_fields: tokens,
+            })
+        }
+        _ => HyperMeshCommentFields::HMMove(HMMoveCommentFields {
+            collector_id: None,
+            raw_fields: tokens,
+        }),
+    }
+}
+
+fn tokenize_hypermesh_fields(text: &str) -> Vec<String> {
+    let mut tokens = Vec::new();
+    let mut current = String::new();
+    let mut in_quotes = false;
+
+    for ch in text.chars() {
+        match ch {
+            '"' => {
+                if in_quotes {
+                    if !current.trim().is_empty() {
+                        tokens.push(current.trim().to_string());
+                    }
+                    current.clear();
+                    in_quotes = false;
+                } else {
+                    if !current.trim().is_empty() {
+                        tokens.push(current.trim().to_string());
+                    }
+                    current.clear();
+                    in_quotes = true;
+                }
+            }
+            ',' if !in_quotes => {
+                if !current.trim().is_empty() {
+                    tokens.push(current.trim().to_string());
+                }
+                current.clear();
+            }
+            ch if ch.is_whitespace() && !in_quotes => {
+                if !current.trim().is_empty() {
+                    tokens.push(current.trim().to_string());
+                    current.clear();
+                }
+            }
+            _ => current.push(ch),
+        }
+    }
+
+    if !current.trim().is_empty() {
+        tokens.push(current.trim().to_string());
+    }
+
+    tokens
 }
 
 fn field_string(fields: &[String], index: usize) -> Option<String> {
@@ -236,6 +402,42 @@ fn split_comment(line: &str) -> (&str, Option<String>) {
     (payload, Some(comment))
 }
 
+fn should_merge_comment_continuation(comment: &str, records: &[RawRecord]) -> bool {
+    if !has_hypermesh_continuation_prefix(comment) {
+        return false;
+    }
+    if extract_comment_continuation_fields(comment).is_empty() {
+        return false;
+    }
+
+    matches!(
+        records.last(),
+        Some(RawRecord::Comment { text, .. })
+            if matches!(
+                extract_hypermesh_tag(text).as_deref(),
+                Some("HMMOVE" | "HMDPRP")
+            )
+    )
+}
+
+fn merge_comment_continuation(comment: &str, line_number: usize, records: &mut [RawRecord]) {
+    if let Some(RawRecord::Comment { end_line, text, .. }) = records.last_mut() {
+        let continuation = extract_comment_continuation_fields(comment);
+        if !continuation.is_empty() {
+            text.push('\n');
+            text.push_str(&continuation.join(" "));
+        }
+        *end_line = line_number;
+    }
+}
+
+fn normalize_comment_for_tokenization(text: &str) -> String {
+    text.lines()
+        .map(|line| line.trim().trim_start_matches('$').trim_start().to_string())
+        .collect::<Vec<_>>()
+        .join(" ")
+}
+
 fn is_continuation_line(line: &str) -> bool {
     line.trim_start().starts_with('*')
 }
@@ -247,7 +449,30 @@ fn flush_pending_card(card: &mut Option<RawCardRecord>, records: &mut Vec<RawRec
 }
 
 fn parse_card_start(line: &str, line_number: usize) -> Option<RawCardRecord> {
+    let trimmed = line.trim();
+    let compact = trimmed
+        .chars()
+        .filter(|ch| !ch.is_whitespace())
+        .collect::<String>();
+    if compact.to_ascii_uppercase().starts_with("BEGINBULK") {
+        return Some(begin_bulk_record(line_number));
+    }
+
+    let mut words = trimmed.split_whitespace();
+    if words
+        .next()
+        .is_some_and(|value| value.eq_ignore_ascii_case("BEGIN"))
+        && words
+            .next()
+            .is_some_and(|value| value.eq_ignore_ascii_case("BULK"))
+    {
+        return Some(begin_bulk_record(line_number));
+    }
+
     let first_line_slots = split_fixed_width_fields(line, 8, Some(10));
+    if starts_with_begin_bulk_slots(&first_line_slots) {
+        return Some(begin_bulk_record(line_number));
+    }
     let first_field = first_line_slots.first()?.clone();
     let first_field = first_field.trim();
     if first_field.is_empty() {
@@ -289,6 +514,54 @@ fn extend_card_with_continuation(card: &mut RawCardRecord, line: &str, line_numb
     card.end_line = line_number;
 }
 
+fn begin_bulk_record(line_number: usize) -> RawCardRecord {
+    RawCardRecord {
+        name: "BEGIN".to_string(),
+        long_format: false,
+        fields: vec!["BULK".to_string()],
+        start_line: line_number,
+        end_line: line_number,
+    }
+}
+
+fn starts_with_begin_bulk_slots(slots: &[String]) -> bool {
+    let combined = slots
+        .iter()
+        .take(2)
+        .map(|value| {
+            value
+                .chars()
+                .filter(|ch| !ch.is_whitespace())
+                .collect::<String>()
+        })
+        .collect::<String>()
+        .to_ascii_uppercase();
+    combined.starts_with("BEGINBULK")
+}
+
+fn extract_hypermesh_tag(text: &str) -> Option<String> {
+    let normalized = normalize_comment_for_tokenization(text);
+    let tokens = tokenize_hypermesh_fields(&normalized);
+    let tag = tokens.first()?.to_ascii_uppercase();
+    matches!(tag.as_str(), "HMNAME" | "HWCOLOR" | "HMMOVE" | "HMDPRP").then_some(tag)
+}
+
+fn has_hypermesh_continuation_prefix(comment: &str) -> bool {
+    let Some(payload) = comment.strip_prefix('$') else {
+        return false;
+    };
+    let leading_whitespace = payload.chars().take_while(|ch| ch.is_whitespace()).count();
+    leading_whitespace >= 8
+}
+
+fn extract_comment_continuation_fields(comment: &str) -> Vec<String> {
+    let payload = comment.strip_prefix('$').unwrap_or(comment);
+    payload
+        .split_whitespace()
+        .map(str::to_string)
+        .collect::<Vec<_>>()
+}
+
 fn split_fixed_width_fields(line: &str, width: usize, max_fields: Option<usize>) -> Vec<String> {
     let mut fields = Vec::new();
     let mut start = 0usize;
@@ -318,19 +591,24 @@ fn trim_trailing_empty_fields(fields: &mut Vec<String>) {
 #[cfg(test)]
 mod tests {
     use super::parse_file_items;
-    use crate::model::{OptiStructCardKind, OptiStructItem};
+    use crate::model::{
+        HMDPrpCommentFields, HMMoveCommentFields, HMNameCommentFields, HWColorCommentFields,
+        HyperMeshCommentFields, OptiStructCardKind, OptiStructCommentKind, OptiStructItem,
+    };
     use std::path::Path;
 
     #[test]
-    fn parses_grid_cquad4_ctria3_force_moment_and_include_cards() {
+    fn parses_grid_cquad4_ctria3_force_moment_include_begin_and_end_cards() {
         let content = "\
 $ Inicio
+BEGIN   BULK
 GRID    100     0       1.0     2.0     3.0
 CQUAD4  200     10      1       2       3       4
 CTRIA3  201     10      1       3       4
 FORCE   1       100     0       500.0   1.0     0.0     0.0
 MOMENT  2       100     0       300.0   0.0     1.0     0.0
 INCLUDE \"submodel.fem\"
+ENDDATA
 ";
         let items = parse_file_items("file:demo", Path::new("demo.fem"), content);
         let cards = items
@@ -341,15 +619,17 @@ INCLUDE \"submodel.fem\"
             })
             .collect::<Vec<_>>();
 
-        assert_eq!(cards.len(), 6);
-        assert!(matches!(cards[0].kind, OptiStructCardKind::Grid(_)));
-        assert!(matches!(cards[1].kind, OptiStructCardKind::Cquad4(_)));
-        assert!(matches!(cards[2].kind, OptiStructCardKind::Ctria3(_)));
-        assert!(matches!(cards[3].kind, OptiStructCardKind::Force(_)));
-        assert!(matches!(cards[4].kind, OptiStructCardKind::Moment(_)));
-        assert!(matches!(cards[5].kind, OptiStructCardKind::Include(_)));
+        assert_eq!(cards.len(), 8);
+        assert!(matches!(cards[0].kind, OptiStructCardKind::BeginBulk(_)));
+        assert!(matches!(cards[1].kind, OptiStructCardKind::Grid(_)));
+        assert!(matches!(cards[2].kind, OptiStructCardKind::Cquad4(_)));
+        assert!(matches!(cards[3].kind, OptiStructCardKind::Ctria3(_)));
+        assert!(matches!(cards[4].kind, OptiStructCardKind::Force(_)));
+        assert!(matches!(cards[5].kind, OptiStructCardKind::Moment(_)));
+        assert!(matches!(cards[6].kind, OptiStructCardKind::Include(_)));
+        assert!(matches!(cards[7].kind, OptiStructCardKind::EndData(_)));
 
-        if let OptiStructCardKind::Grid(grid) = &cards[0].kind {
+        if let OptiStructCardKind::Grid(grid) = &cards[1].kind {
             assert_eq!(grid.id, Some(100));
             assert_eq!(grid.x1, Some(1.0));
             assert_eq!(grid.x2, Some(2.0));
@@ -369,6 +649,7 @@ INCLUDE \"submodel.fem\"
         match &items[0] {
             OptiStructItem::Comment(comment) => {
                 assert_eq!(comment.location.start_line, 1);
+                assert_eq!(comment.kind, OptiStructCommentKind::Comment);
                 assert_eq!(comment.text, "$ Encabezado");
             }
             _ => panic!("expected comment in line 1"),
@@ -386,6 +667,7 @@ INCLUDE \"submodel.fem\"
         match &items[2] {
             OptiStructItem::Comment(comment) => {
                 assert_eq!(comment.location.start_line, 2);
+                assert_eq!(comment.kind, OptiStructCommentKind::Comment);
                 assert_eq!(comment.text, "$ inline");
             }
             _ => panic!("expected inline comment in line 2"),
@@ -394,10 +676,202 @@ INCLUDE \"submodel.fem\"
         match &items[3] {
             OptiStructItem::Comment(comment) => {
                 assert_eq!(comment.location.start_line, 3);
+                assert_eq!(comment.kind, OptiStructCommentKind::Comment);
                 assert_eq!(comment.text, "$ Final");
             }
             _ => panic!("expected final comment in line 3"),
         }
+    }
+
+    #[test]
+    fn classifies_hypermesh_comments() {
+        let content = "$HMNAME COMP 1\"panel\" MAIN\n$HWCOLOR COMP 1 5\n$ texto normal\n";
+        let items = parse_file_items("file:hm", Path::new("hm.fem"), content);
+        let comments = items
+            .iter()
+            .filter_map(|item| match item {
+                OptiStructItem::Comment(comment) => Some(comment),
+                OptiStructItem::Card(_) => None,
+            })
+            .collect::<Vec<_>>();
+
+        assert_eq!(comments.len(), 3);
+        assert!(matches!(
+            comments[0].kind,
+            OptiStructCommentKind::HyperMeshComment {
+                ref tag,
+                fields: HyperMeshCommentFields::HMName(HMNameCommentFields {
+                    entity_type: Some(ref entity_type),
+                    id: Some(ref id),
+                    name: Some(ref name),
+                    id_pool: Some(ref id_pool),
+                    ..
+                })
+                } if tag == "HMNAME"
+                    && entity_type == "COMP"
+                    && id == "1"
+                && name == "panel"
+                && id_pool == "MAIN"
+        ));
+        assert!(matches!(
+            comments[1].kind,
+            OptiStructCommentKind::HyperMeshComment {
+                ref tag,
+                fields: HyperMeshCommentFields::HWColor(HWColorCommentFields {
+                    entity_type: Some(ref entity_type),
+                    id: Some(ref id),
+                    color_id: Some(ref color_id),
+                    ..
+                })
+            } if tag == "HWCOLOR"
+                && entity_type == "COMP"
+                && id == "1"
+                && color_id == "5"
+        ));
+        assert_eq!(comments[2].kind, OptiStructCommentKind::Comment);
+    }
+
+    #[test]
+    fn parses_hmmove_and_hmdprp_fields() {
+        let content =
+            "$HMMOVE        1\n$              1THRU         100\n$HMDPRP elements 10 11 12\n";
+        let items = parse_file_items("file:hm2", Path::new("hm2.fem"), content);
+        let comments = items
+            .iter()
+            .filter_map(|item| match item {
+                OptiStructItem::Comment(comment) => Some(comment),
+                OptiStructItem::Card(_) => None,
+            })
+            .collect::<Vec<_>>();
+
+        assert_eq!(comments.len(), 2);
+        assert!(matches!(
+            comments[0].kind,
+            OptiStructCommentKind::HyperMeshComment {
+                ref tag,
+                fields: HyperMeshCommentFields::HMMove(HMMoveCommentFields {
+                    collector_id: Some(ref collector_id),
+                    ref raw_fields,
+                    ..
+                })
+            } if tag == "HMMOVE"
+                && collector_id == "1"
+                && raw_fields == &vec!["1".to_string(), "1THRU".to_string(), "100".to_string()]
+        ));
+
+        assert!(matches!(
+            comments[1].kind,
+            OptiStructCommentKind::HyperMeshComment {
+                ref tag,
+                fields: HyperMeshCommentFields::HMDPrp(HMDPrpCommentFields {
+                    elements: Some(ref elements),
+                    ref ids,
+                    ..
+                })
+            } if tag == "HMDPRP" && elements == "elements" && ids == &vec!["10".to_string(), "11".to_string(), "12".to_string()]
+        ));
+    }
+
+    #[test]
+    fn parses_hypermesh_examples_with_fixed_width_continuations() {
+        let content = "\
+$HMMOVE        1
+$              1THRU          98     100      99
+$HMDPRP
+$              1
+";
+        let items = parse_file_items("file:hm3", Path::new("hm3.fem"), content);
+        let comments = items
+            .iter()
+            .filter_map(|item| match item {
+                OptiStructItem::Comment(comment) => Some(comment),
+                OptiStructItem::Card(_) => None,
+            })
+            .collect::<Vec<_>>();
+
+        assert_eq!(comments.len(), 2);
+        assert!(matches!(
+            comments[0].kind,
+            OptiStructCommentKind::HyperMeshComment {
+                ref tag,
+                fields: HyperMeshCommentFields::HMMove(HMMoveCommentFields {
+                    collector_id: Some(ref collector_id),
+                    ref raw_fields,
+                    ..
+                })
+            } if tag == "HMMOVE"
+                && collector_id == "1"
+                && raw_fields
+                    == &vec![
+                        "1".to_string(),
+                        "1THRU".to_string(),
+                        "98".to_string(),
+                        "100".to_string(),
+                        "99".to_string()
+                    ]
+        ));
+        assert!(matches!(
+            comments[1].kind,
+            OptiStructCommentKind::HyperMeshComment {
+                ref tag,
+                fields: HyperMeshCommentFields::HMDPrp(HMDPrpCommentFields {
+                    elements: None,
+                    ref ids,
+                    ..
+                })
+            } if tag == "HMDPRP" && ids == &vec!["1".to_string()]
+        ));
+    }
+
+    #[test]
+    fn parses_hmname_examples_with_quoted_name_attached_to_id() {
+        let content = "\
+$HMNAME PROP                   1\"PCOMPP\" 4
+$HMNAME COMP                   1\"Plate\"
+";
+        let items = parse_file_items("file:hm4", Path::new("hm4.fem"), content);
+        let comments = items
+            .iter()
+            .filter_map(|item| match item {
+                OptiStructItem::Comment(comment) => Some(comment),
+                OptiStructItem::Card(_) => None,
+            })
+            .collect::<Vec<_>>();
+
+        assert_eq!(comments.len(), 2);
+        assert!(matches!(
+            comments[0].kind,
+            OptiStructCommentKind::HyperMeshComment {
+                ref tag,
+                fields: HyperMeshCommentFields::HMName(HMNameCommentFields {
+                    entity_type: Some(ref entity_type),
+                    id: Some(ref id),
+                    name: Some(ref name),
+                    id_pool: Some(ref id_pool),
+                    ..
+                })
+            } if tag == "HMNAME"
+                && entity_type == "PROP"
+                && id == "1"
+                && name == "PCOMPP"
+                && id_pool == "4"
+        ));
+        assert!(matches!(
+            comments[1].kind,
+            OptiStructCommentKind::HyperMeshComment {
+                ref tag,
+                fields: HyperMeshCommentFields::HMName(HMNameCommentFields {
+                    entity_type: Some(ref entity_type),
+                    id: Some(ref id),
+                    name: Some(ref name),
+                    id_pool: None,
+                    ..
+                })
+            } if tag == "HMNAME"
+                && entity_type == "COMP"
+                && id == "1"
+                && name == "Plate"
+        ));
     }
 
     #[test]
@@ -416,5 +890,37 @@ INCLUDE \"submodel.fem\"
             .expect("INCLUDE card should exist");
 
         assert_eq!(include.target, "folder/submodel.inc");
+    }
+
+    #[test]
+    fn parses_begin_bulk_with_single_space_separator() {
+        let content = "BEGIN BULK\nGRID    1       0       0.0     0.0     0.0\nENDDATA\n";
+        let items = parse_file_items("file:bulk", Path::new("bulk.fem"), content);
+        let cards = items
+            .iter()
+            .filter_map(|item| match item {
+                OptiStructItem::Card(card) => Some(card),
+                OptiStructItem::Comment(_) => None,
+            })
+            .collect::<Vec<_>>();
+
+        assert!(matches!(cards[0].kind, OptiStructCardKind::BeginBulk(_)));
+        assert_eq!(cards[0].card_name, "BEGIN");
+        assert_eq!(cards[0].fields, vec!["BULK".to_string()]);
+    }
+
+    #[test]
+    fn parses_begin_bulk_when_name_is_split_by_short_fields() {
+        let content = "BEGIN BULK2\nGRID    1       0       0.0     0.0     0.0\nENDDATA\n";
+        let items = parse_file_items("file:bulk2", Path::new("bulk2.fem"), content);
+        let cards = items
+            .iter()
+            .filter_map(|item| match item {
+                OptiStructItem::Card(card) => Some(card),
+                OptiStructItem::Comment(_) => None,
+            })
+            .collect::<Vec<_>>();
+
+        assert!(matches!(cards[0].kind, OptiStructCardKind::BeginBulk(_)));
     }
 }

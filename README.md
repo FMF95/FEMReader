@@ -6,10 +6,13 @@ Lector de modelos FEM en Rust, orientado a escaneo rápido, resolución de depen
 
 - **Core library** para escaneo de archivos, resolución de referencias y ensamblado de modelos.
 - **CLI** para procesar un directorio y exportar JSON versionado.
-- **Cache incremental oculto** (`.femreader-cache`) para evitar reprocesar archivos no modificados.
+- **Cache incremental oculto** (`.femreader-cache`) para evitar reprocesar archivos no modificados (se ignora como entrada de modelo).
 - **GUI de escritorio** para visualizar modelos, archivos y dependencias.
 - **Clasificación de archivos**: `Model` (participa en dependencias/modelos) y `NonModel` (se escanea pero no se procesa en el grafo FEM).
-- **Lectura inicial de tarjetas OptiStruct** con objetos tipados para `GRID`, `CQUAD4`, `CTRIA3`, `FORCE`, `MOMENT` e `INCLUDE`.
+- **Lectura de tarjetas OptiStruct** con objetos tipados para `GRID`, `CQUAD4`, `CTRIA3`, `FORCE`, `MOMENT`, `INCLUDE`, `BEGIN BULK` y `ENDDATA`.
+- **Comentarios OptiStruct clasificados** como `Comment` o `HyperMesh Comment` (`$HMNAME`, `$HWCOLOR`, `$HMMOVE`, `$HMDPRP`).
+- **IDs únicos determinísticos** para entidades del modelo (directorios, archivos, dependencias, modelos e ítems OptiStruct), en formato hash estable sin prefijos.
+- **Campos de nombre legible**: `name` para archivos/directorios y `file_name` para ubicaciones de ítems OptiStruct.
 - **Identificación automática de solver por directorio**:
   - `.fem` -> `OptiStruct`
   - `.bdf` -> `NASTRAN`
@@ -51,6 +54,7 @@ cargo run -- /ruta/absoluta/a/modelos --delete-cache
 - Guarda por archivo el `path`, fecha de modificación y tamaño para detectar cambios incrementales.
 - Se crea en el directorio raíz escaneado y se marca como oculto cuando el sistema operativo lo soporta.
 - Si no quieres persistencia, usa `--delete-cache` para eliminarla al terminar la lectura.
+- El scanner ignora `.femreader-cache` para que no aparezca como archivo de modelo.
 
 ## Uso de la GUI
 
@@ -66,7 +70,7 @@ En la GUI puedes:
 - Ver resumen de directorios, archivos de modelo, archivos no modelo, dependencias y referencias sin resolver.
 - Seleccionar cada modelo y revisar sus archivos, solver detectado y relaciones de dependencia.
 - Ver el listado de archivos `NonModel` (escaneados pero fuera del grafo de modelos FEM).
-- Ver la estructura visual de lectura OptiStruct (por archivo, línea, comentario y tarjeta).
+- Ver la estructura visual de lectura OptiStruct (por archivo, línea, comentario/tipo HyperMesh y tarjeta), priorizando nombres en títulos e ID/path en el detalle desplegado, con panel derecho expandido a todo el ancho y alto disponible.
 - Activar la opción para eliminar `.femreader-cache` tras cada carga.
 
 ## Contrato de salida JSON
@@ -81,6 +85,12 @@ La salida serializada incluye:
 - `unresolved_references`
 - `optistruct_items`
 - `models`
+
+Notas:
+
+- `id` y `file_id` contienen IDs únicos (no rutas).
+- `path` y `file_path` mantienen la ruta completa.
+- Los IDs únicos se serializan como hash estable (sin prefijos tipo `file_`, `model_`, etc.).
 
 ## Desarrollo y arquitectura
 

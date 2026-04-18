@@ -8,9 +8,11 @@ El parser está en `src/optistruct.rs` y produce `optistruct_items` en `ModelCon
 
 Cada item es:
 
-- `Comment`: comentario `$...`
+- `Comment`: comentario `$...` con clasificación (`Comment` o `HyperMesh Comment`)
 - `Card`: tarjeta de OptiStruct con:
+  - `id` único del ítem
   - `location` (`file_id`, `file_path`, `start_line`, `end_line`, `ordinal`)
+  - `location.file_name`
   - `card_name`
   - `long_format` (16 chars/campo) o formato corto (8 chars/campo)
   - `fields` (campos crudos)
@@ -26,8 +28,32 @@ Cada item es:
 | `FORCE` | `ForceCard` | `sid`, `g`, `cid`, `f`, `n1`, `n2`, `n3` |
 | `MOMENT` | `MomentCard` | `sid`, `g`, `cid`, `m`, `n1`, `n2`, `n3` |
 | `INCLUDE` | `IncludeCard` | `target` |
+| `BEGIN BULK` | `BeginBulkCard` | marcador de inicio del bloque bulk |
+| `ENDDATA` | `EndDataCard` | marcador de cierre del bloque de datos |
 
 Las tarjetas no tipadas se guardan como `OptiStructCardKind::Unknown`.
+
+Comentarios HyperMesh detectados automáticamente:
+
+- `$HMNAME`
+- `$HWCOLOR`
+- `$HMMOVE`
+- `$HMDPRP`
+
+Campos parseados por tipo:
+
+- `HMNAME entity_type, id, name, id_pool`
+- `HWCOLOR entity_type, id, color_id`
+- `HMMOVE collector_id, raw_fields (incluye continuaciones)`
+- `HMDPRP elements, ids` (si no hay keyword de elementos, todos los campos se interpretan como `ids`)
+
+Casos cubiertos:
+
+- `HMNAME` con `id` pegado al nombre entre comillas (ej. `1"COMP_A"`).
+- `HMMOVE` con continuidad en línea de comentario siguiente indentada:
+  - `$HMMOVE        1`
+  - `$              1THRU         100`
+- `HMDPRP` con continuidad en líneas `$` indentadas (campos de 8 caracteres).
 
 ## 3. Cómo añadir una tarjeta nueva
 
@@ -46,6 +72,7 @@ Las tarjetas no tipadas se guardan como `OptiStructCardKind::Unknown`.
 - Mantener `fields` con orden original para depuración.
 - Usar `Option<T>` en campos numéricos para evitar perder la tarjeta si un campo es inválido.
 - No eliminar comentarios: conservarlos como `Comment` con su línea original.
+- Si el comentario coincide con prefijos HyperMesh, marcarlo como `HyperMesh Comment`.
 - Evitar mezclar reglas de solver en el parser: la selección de adapter vive en `dependency.rs`.
 
 ## 5. Notas de formato OptiStruct soportadas

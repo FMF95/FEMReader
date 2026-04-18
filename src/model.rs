@@ -17,12 +17,14 @@ pub enum FileCategory {
 #[derive(Debug, Clone)]
 pub struct DirectoryNode {
     pub id: String,
+    pub name: String,
     pub path: PathBuf,
 }
 
 #[derive(Debug, Clone)]
 pub struct FileNode {
     pub id: String,
+    pub name: String,
     pub path: PathBuf,
     pub extension: Option<String>,
     pub size: u64,
@@ -34,6 +36,7 @@ pub struct FileNode {
 
 #[derive(Debug, Clone)]
 pub struct DependencyEdge {
+    pub id: String,
     pub from_file_id: String,
     pub to_file_id: String,
     pub reference: String,
@@ -51,6 +54,7 @@ pub struct Model {
 #[derive(Debug, Clone, PartialEq)]
 pub struct OptiStructLocation {
     pub file_id: String,
+    pub file_name: String,
     pub file_path: PathBuf,
     pub start_line: usize,
     pub end_line: usize,
@@ -59,8 +63,57 @@ pub struct OptiStructLocation {
 
 #[derive(Debug, Clone, PartialEq)]
 pub struct OptiStructCommentItem {
+    pub id: String,
     pub location: OptiStructLocation,
+    pub kind: OptiStructCommentKind,
     pub text: String,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct HMNameCommentFields {
+    pub entity_type: Option<String>,
+    pub id: Option<String>,
+    pub name: Option<String>,
+    pub id_pool: Option<String>,
+    pub raw_fields: Vec<String>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct HWColorCommentFields {
+    pub entity_type: Option<String>,
+    pub id: Option<String>,
+    pub color_id: Option<String>,
+    pub raw_fields: Vec<String>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct HMMoveCommentFields {
+    pub collector_id: Option<String>,
+    pub raw_fields: Vec<String>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct HMDPrpCommentFields {
+    pub elements: Option<String>,
+    pub ids: Vec<String>,
+    pub raw_fields: Vec<String>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum HyperMeshCommentFields {
+    HMName(HMNameCommentFields),
+    HWColor(HWColorCommentFields),
+    HMMove(HMMoveCommentFields),
+    HMDPrp(HMDPrpCommentFields),
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum OptiStructCommentKind {
+    Comment,
+    HyperMeshComment {
+        tag: String,
+        fields: HyperMeshCommentFields,
+    },
 }
 
 #[derive(Debug, Clone, PartialEq)]
@@ -135,6 +188,12 @@ pub struct IncludeCard {
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
+pub struct BeginBulkCard;
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct EndDataCard;
+
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub struct UnknownCard {
     pub card_name: String,
 }
@@ -147,11 +206,14 @@ pub enum OptiStructCardKind {
     Force(ForceCard),
     Moment(MomentCard),
     Include(IncludeCard),
+    BeginBulk(BeginBulkCard),
+    EndData(EndDataCard),
     Unknown(UnknownCard),
 }
 
 #[derive(Debug, Clone, PartialEq)]
 pub struct OptiStructCardItem {
+    pub id: String,
     pub location: OptiStructLocation,
     pub card_name: String,
     pub long_format: bool,

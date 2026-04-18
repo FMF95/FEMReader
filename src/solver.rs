@@ -24,6 +24,17 @@ fn extension_of(path: &Path) -> String {
 }
 
 pub fn is_model_file_path(path: &Path) -> bool {
+    if path
+        .file_name()
+        .map(|name| {
+            name.to_string_lossy()
+                .eq_ignore_ascii_case(".femreader-cache")
+        })
+        .unwrap_or(false)
+    {
+        return false;
+    }
+
     if path.extension().is_none() {
         return true;
     }
