@@ -1,5 +1,7 @@
 use crate::ids::stable_id;
-use crate::model::{DependencyEdge, FileCategory, FileNode, OptiStructItem, SolverKind};
+use crate::model::{
+    DependencyEdge, FileCategory, FileNode, OptiStructFileSummary, OptiStructItem, SolverKind,
+};
 use crate::optistruct;
 use crate::scanner::ScanResult;
 use crate::solver::SolverAdapter;
@@ -13,6 +15,7 @@ pub struct DependencyGraph {
     pub edges: Vec<DependencyEdge>,
     pub unresolved_references: Vec<String>,
     pub optistruct_items: Vec<OptiStructItem>,
+    pub optistruct_file_summaries: Vec<OptiStructFileSummary>,
 }
 
 pub trait DependencyResolver {
@@ -59,6 +62,7 @@ impl DependencyResolver for DefaultDependencyResolver {
         let mut edges = Vec::new();
         let mut unresolved_references = Vec::new();
         let mut optistruct_items = Vec::new();
+        let mut optistruct_file_summaries = Vec::new();
         let directory_solver_hints = build_directory_solver_hints(scan_result);
 
         let mut by_path: HashMap<PathBuf, String> = HashMap::new();
@@ -93,8 +97,13 @@ impl DependencyResolver for DefaultDependencyResolver {
             };
 
             if adapter.solver_kind() == SolverKind::OptiStruct {
-                optistruct_items
-                    .extend(optistruct::parse_file_items(&file.id, &file.path, &content));
+                let file_items = optistruct::parse_file_items(&file.id, &file.path, &content);
+                optistruct_file_summaries.push(optistruct::summarize_file_items(
+                    &file.id,
+                    &file.path,
+                    &file_items,
+                ));
+                optistruct_items.extend(file_items);
             }
 
             for reference in adapter.extract_references(&content) {
@@ -124,6 +133,7 @@ impl DependencyResolver for DefaultDependencyResolver {
             edges,
             unresolved_references,
             optistruct_items,
+            optistruct_file_summaries,
         }
     }
 }

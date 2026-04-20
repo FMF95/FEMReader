@@ -69,6 +69,13 @@ pub struct OptiStructCommentItem {
     pub text: String,
 }
 
+#[derive(Debug, Clone, PartialEq)]
+pub struct OptiStructTextItem {
+    pub id: String,
+    pub location: OptiStructLocation,
+    pub text: String,
+}
+
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct HMNameCommentFields {
     pub entity_type: Option<String>,
@@ -224,7 +231,27 @@ pub struct OptiStructCardItem {
 #[derive(Debug, Clone, PartialEq)]
 pub enum OptiStructItem {
     Comment(OptiStructCommentItem),
+    Text(OptiStructTextItem),
     Card(OptiStructCardItem),
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct OptiStructCardCount {
+    pub card_name: String,
+    pub count: usize,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct OptiStructFileSummary {
+    pub file_id: String,
+    pub file_name: String,
+    pub file_path: PathBuf,
+    pub total_items: usize,
+    pub comment_items: usize,
+    pub hypermesh_comment_items: usize,
+    pub text_items: usize,
+    pub card_items: usize,
+    pub card_counts: Vec<OptiStructCardCount>,
 }
 
 #[derive(Debug, Clone)]
@@ -236,5 +263,6 @@ pub struct ModelContent {
     pub dependencies: Vec<DependencyEdge>,
     pub unresolved_references: Vec<String>,
     pub optistruct_items: Vec<OptiStructItem>,
+    pub optistruct_file_summaries: Vec<OptiStructFileSummary>,
     pub models: Vec<Model>,
 }

@@ -148,6 +148,10 @@ impl FemReaderGuiApp {
         full_width_collapsing(ui, "Estructura OptiStruct (visual)", |ui| {
             Self::render_optistruct_structure(ui, content, model);
         });
+
+        full_width_collapsing(ui, "Resumen OptiStruct por archivo", |ui| {
+            Self::render_optistruct_file_summaries(ui, content, model);
+        });
     }
 
     fn render_optistruct_structure(ui: &mut egui::Ui, content: &ModelContent, model: &Model) {
@@ -160,6 +164,11 @@ impl FemReaderGuiApp {
                     comment.location.file_id.as_str(),
                     comment.location.file_name.clone(),
                     comment.location.file_path.display().to_string(),
+                ),
+                OptiStructItem::Text(text) => (
+                    text.location.file_id.as_str(),
+                    text.location.file_name.clone(),
+                    text.location.file_path.display().to_string(),
                 ),
                 OptiStructItem::Card(card) => (
                     card.location.file_id.as_str(),
@@ -184,6 +193,7 @@ impl FemReaderGuiApp {
         for ((file_name, file_id, file_path), mut items) in grouped {
             items.sort_by_key(|item| match item {
                 OptiStructItem::Comment(comment) => comment.location.ordinal,
+                OptiStructItem::Text(text) => text.location.ordinal,
                 OptiStructItem::Card(card) => card.location.ordinal,
             });
 
@@ -218,6 +228,22 @@ impl FemReaderGuiApp {
                                 },
                             );
                         }
+                        OptiStructItem::Text(text) => {
+                            full_width_collapsing(
+                                ui,
+                                format!("L{} [Text]", text.location.start_line),
+                                |ui| {
+                                    ui.label(format!("ID: {}", text.id));
+                                    ui.label(format!("Texto: {}", text.text));
+                                    ui.label(format!(
+                                        "Path: {}",
+                                        text.location.file_path.display()
+                                    ));
+                                    ui.label(format!("File ID: {}", text.location.file_id));
+                                    ui.label(format!("Ordinal: {}", text.location.ordinal));
+                                },
+                            );
+                        }
                         OptiStructItem::Card(card) => {
                             let line_label = if card.location.start_line == card.location.end_line {
                                 format!("L{}", card.location.start_line)
@@ -247,6 +273,56 @@ impl FemReaderGuiApp {
                                 },
                             );
                         }
+                    }
+                }
+            });
+        }
+    }
+
+    fn render_optistruct_file_summaries(ui: &mut egui::Ui, content: &ModelContent, model: &Model) {
+        let model_file_ids: HashSet<&str> = model.file_ids.iter().map(String::as_str).collect();
+        let summaries = content
+            .optistruct_file_summaries
+            .iter()
+            .filter(|summary| model_file_ids.contains(summary.file_id.as_str()))
+            .collect::<Vec<_>>();
+
+        if summaries.is_empty() {
+            ui.label("No hay resúmenes OptiStruct para este modelo.");
+            return;
+        }
+
+        let total_comments: usize = summaries.iter().map(|entry| entry.comment_items).sum();
+        let total_hypermesh_comments: usize = summaries
+            .iter()
+            .map(|entry| entry.hypermesh_comment_items)
+            .sum();
+        let total_text_items: usize = summaries.iter().map(|entry| entry.text_items).sum();
+        let total_cards: usize = summaries.iter().map(|entry| entry.card_items).sum();
+        let total_items: usize = summaries.iter().map(|entry| entry.total_items).sum();
+        ui.label(format!(
+            "Totales del modelo: {} items, {} tarjetas, {} comentarios ({} HyperMesh), {} líneas de texto.",
+            total_items, total_cards, total_comments, total_hypermesh_comments, total_text_items
+        ));
+        ui.separator();
+
+        for summary in summaries {
+            full_width_collapsing(ui, &summary.file_name, |ui| {
+                ui.label(format!("Path: {}", summary.file_path.display()));
+                ui.label(format!("File ID: {}", summary.file_id));
+                ui.label(format!("Items totales: {}", summary.total_items));
+                ui.label(format!("Tarjetas: {}", summary.card_items));
+                ui.label(format!(
+                    "Comentarios: {} (HyperMesh: {})",
+                    summary.comment_items, summary.hypermesh_comment_items
+                ));
+                ui.label(format!("Líneas de texto: {}", summary.text_items));
+                if summary.card_counts.is_empty() {
+                    ui.label("Conteo de tarjetas: (sin tarjetas parseadas)");
+                } else {
+                    ui.label("Conteo de tarjetas:");
+                    for entry in &summary.card_counts {
+                        ui.label(format!("  {}: {}", entry.card_name, entry.count));
                     }
                 }
             });
@@ -439,24 +515,46 @@ fn solver_label(kind: &SolverKind) -> &'static str {
 fn card_kind_summary(kind: &OptiStructCardKind) -> String {
     match kind {
         OptiStructCardKind::Grid(card) => format!(
-            "GRID id={:?} xyz=({:?}, {:?}, {:?})",
-            card.id, card.x1, card.x2, card.x3
+            "GRID id={} xyz=({}, {}, {})",
+            format_option(card.id),
+            format_option(card.x1),
+            format_option(card.x2),
+            format_option(card.x3)
         ),
         OptiStructCardKind::Cquad4(card) => format!(
-            "CQUAD4 id={:?} pid={:?} g=({:?},{:?},{:?},{:?})",
-            card.id, card.pid, card.g1, card.g2, card.g3, card.g4
+            "CQUAD4 id={} pid={} g=({},{},{},{})",
+            format_option(card.id),
+            format_option(card.pid),
+            format_option(card.g1),
+            format_option(card.g2),
+            format_option(card.g3),
+            format_option(card.g4)
         ),
         OptiStructCardKind::Ctria3(card) => format!(
-            "CTRIA3 id={:?} pid={:?} g=({:?},{:?},{:?})",
-            card.id, card.pid, card.g1, card.g2, card.g3
+            "CTRIA3 id={} pid={} g=({},{},{})",
+            format_option(card.id),
+            format_option(card.pid),
+            format_option(card.g1),
+            format_option(card.g2),
+            format_option(card.g3)
         ),
         OptiStructCardKind::Force(card) => format!(
-            "FORCE sid={:?} g={:?} f={:?} n=({:?},{:?},{:?})",
-            card.sid, card.g, card.f, card.n1, card.n2, card.n3
+            "FORCE sid={} g={} f={} n=({},{},{})",
+            format_option(card.sid),
+            format_option(card.g),
+            format_option(card.f),
+            format_option(card.n1),
+            format_option(card.n2),
+            format_option(card.n3)
         ),
         OptiStructCardKind::Moment(card) => format!(
-            "MOMENT sid={:?} g={:?} m={:?} n=({:?},{:?},{:?})",
-            card.sid, card.g, card.m, card.n1, card.n2, card.n3
+            "MOMENT sid={} g={} m={} n=({},{},{})",
+            format_option(card.sid),
+            format_option(card.g),
+            format_option(card.m),
+            format_option(card.n1),
+            format_option(card.n2),
+            format_option(card.n3)
         ),
         OptiStructCardKind::Include(card) => format!("INCLUDE target={}", card.target),
         OptiStructCardKind::BeginBulk(_) => "BEGIN BULK".to_string(),
@@ -486,27 +584,64 @@ fn render_hypermesh_fields(ui: &mut egui::Ui, fields: &HyperMeshCommentFields) {
     match fields {
         HyperMeshCommentFields::HMName(fields) => {
             ui.label("HyperMesh (HMNAME):");
-            ui.label(format!("  entity_type: {:?}", fields.entity_type));
-            ui.label(format!("  id: {:?}", fields.id));
-            ui.label(format!("  name: {:?}", fields.name));
-            ui.label(format!("  id_pool: {:?}", fields.id_pool));
+            ui.label(format!(
+                "  entity_type: {}",
+                format_optional_str(fields.entity_type.as_deref())
+            ));
+            ui.label(format!(
+                "  id: {}",
+                format_optional_str(fields.id.as_deref())
+            ));
+            ui.label(format!(
+                "  name: {}",
+                format_optional_str(fields.name.as_deref())
+            ));
+            ui.label(format!(
+                "  id_pool: {}",
+                format_optional_str(fields.id_pool.as_deref())
+            ));
         }
         HyperMeshCommentFields::HWColor(fields) => {
             ui.label("HyperMesh (HWCOLOR):");
-            ui.label(format!("  entity_type: {:?}", fields.entity_type));
-            ui.label(format!("  id: {:?}", fields.id));
-            ui.label(format!("  color_id: {:?}", fields.color_id));
+            ui.label(format!(
+                "  entity_type: {}",
+                format_optional_str(fields.entity_type.as_deref())
+            ));
+            ui.label(format!(
+                "  id: {}",
+                format_optional_str(fields.id.as_deref())
+            ));
+            ui.label(format!(
+                "  color_id: {}",
+                format_optional_str(fields.color_id.as_deref())
+            ));
         }
         HyperMeshCommentFields::HMMove(fields) => {
             ui.label("HyperMesh (HMMOVE):");
-            ui.label(format!("  collector_id: {:?}", fields.collector_id));
+            ui.label(format!(
+                "  collector_id: {}",
+                format_optional_str(fields.collector_id.as_deref())
+            ));
         }
         HyperMeshCommentFields::HMDPrp(fields) => {
             ui.label("HyperMesh (HMDPRP):");
-            ui.label(format!("  elements: {:?}", fields.elements));
+            ui.label(format!(
+                "  elements: {}",
+                format_optional_str(fields.elements.as_deref())
+            ));
             ui.label(format!("  ids: {:?}", fields.ids));
         }
     }
+}
+
+fn format_option<T: std::fmt::Display>(value: Option<T>) -> String {
+    value
+        .map(|inner| inner.to_string())
+        .unwrap_or_else(|| "-".to_string())
+}
+
+fn format_optional_str(value: Option<&str>) -> &str {
+    value.unwrap_or("-")
 }
 
 fn comment_kind_label(kind: &OptiStructCommentKind) -> &'static str {

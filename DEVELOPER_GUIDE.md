@@ -40,6 +40,7 @@ La meta es poder ampliar reglas de parsing/solver y salidas sin duplicar lógica
    - lectura de contenido solo para archivos `Model` soportados por adaptadores;
    - extracción de referencias y resolución a paths canónicos;
    - lectura estructurada de OptiStruct (`optistruct_items`) con metadatos de archivo/línea.
+   - resumen por archivo OptiStruct (`optistruct_file_summaries`) con conteos por tipo de ítem/tarjeta.
    - generación de IDs únicos para `DependencyEdge.id` (hash estable sin prefijos visibles).
    - construcción de `DependencyGraph`.
 3. **Assembler** (`DefaultModelAssembler`) detecta raíces del grafo y arma modelos solo con archivos `Model`.
@@ -81,11 +82,13 @@ Actualmente se usan para resolver dependencias, no para decidir solver de forma 
 
 `src/optistruct.rs` implementa un parser base:
 
-- tarjetas en formato corto (hasta 10 campos, 8 caracteres por campo),
-- formato largo (16 caracteres por campo),
-- continuidad de tarjeta con línea que inicia por `*`,
+- parsing por campos **solo** para tarjetas soportadas explícitamente,
+- tarjetas soportadas en formato corto (hasta 10 campos, 8 caracteres por campo),
+- soporte de formato largo (16 caracteres por campo),
+- continuidad de tarjeta con línea que inicia por `*` (cuando la tarjeta actual es soportada),
 - identificación de comentarios con `$` (línea completa o inline).
 - detección robusta de `BEGIN BULK` (incluyendo formato libre con espacios variables).
+- cualquier línea no comentario sin parser específico se conserva como ítem `Text` (sin forzar parseo por campos).
 
 Además del `INCLUDE`, actualmente se tipan:
 
@@ -102,7 +105,7 @@ Comentarios clasificados:
 - `Comment`
 - `HyperMesh Comment` para prefijos conocidos (`$HMNAME`, `$HWCOLOR`, `$HMMOVE`, `$HMDPRP`).
 
-Cada item parseado (`Comment` o `Card`) incluye:
+Cada item parseado (`Comment`, `Text` o `Card`) incluye:
 
 - id único del ítem (`id`),
 - archivo (`file_id`, `file_path`),
@@ -110,6 +113,15 @@ Cada item parseado (`Comment` o `Card`) incluye:
 - posición (`start_line`, `end_line`),
 - orden estable dentro del archivo (`ordinal`),
 - campos crudos y versión tipada de la tarjeta.
+
+Resumen por archivo (`optistruct_file_summaries`):
+
+- `total_items`
+- `comment_items`
+- `hypermesh_comment_items`
+- `text_items`
+- `card_items`
+- `card_counts` (conteo por nombre de tarjeta)
 
 Campos HyperMesh parseados:
 
@@ -146,6 +158,7 @@ La GUI está implementada con `eframe/egui` y reutiliza el mismo pipeline:
 - permite inspeccionar archivos del modelo y dependencias relacionadas;
 - muestra referencias no resueltas;
 - muestra la estructura de items OptiStruct por archivo (comentarios clasificados + tarjetas con líneas y campos);
+- muestra resumen OptiStruct por archivo (y totales de modelo) para inspección rápida de conteos;
 - permite borrar la cache tras la carga.
 
 Diseño actual: visor de inspección y depuración. No modifica archivos del modelo.
@@ -168,6 +181,8 @@ Los tests de integración están en `tests/integration_reader.rs` y cubren:
 - filtrado del grafo para relacionar solo archivos de modelo;
 - borrado opcional de `.femreader-cache`.
 - parsing de tarjetas OptiStruct con metadatos de posición y tipado de tarjetas clave.
+- preservación de líneas no soportadas como ítems `Text` en OptiStruct.
+- generación de `optistruct_file_summaries` por archivo.
 - ignorar `.femreader-cache` como entrada de modelo.
 
 `src/optistruct.rs` incluye tests unitarios del parser de tarjetas y comentarios.

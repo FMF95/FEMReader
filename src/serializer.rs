@@ -3,7 +3,8 @@ use crate::model::{
     ForceCard, GridCard, HMDPrpCommentFields, HMMoveCommentFields, HMNameCommentFields,
     HWColorCommentFields, HyperMeshCommentFields, IncludeCard, Model, ModelContent, MomentCard,
     OptiStructCardItem, OptiStructCardKind, OptiStructCommentItem, OptiStructCommentKind,
-    OptiStructItem, OptiStructLocation, SolverKind, UnknownCard,
+    OptiStructFileSummary, OptiStructItem, OptiStructLocation, OptiStructTextItem, SolverKind,
+    UnknownCard,
 };
 
 pub trait Serializer {
@@ -74,6 +75,13 @@ fn serialize_compact(content: &ModelContent) -> String {
         }
         out.push_str(&serialize_optistruct_item_compact(item));
     }
+    out.push_str("],\"optistruct_file_summaries\":[");
+    for (i, summary) in content.optistruct_file_summaries.iter().enumerate() {
+        if i > 0 {
+            out.push(',');
+        }
+        out.push_str(&serialize_optistruct_file_summary_compact(summary));
+    }
     out.push_str("],\"models\":[");
     for (i, model) in content.models.iter().enumerate() {
         if i > 0 {
@@ -88,6 +96,7 @@ fn serialize_compact(content: &ModelContent) -> String {
 fn serialize_optistruct_item_compact(item: &OptiStructItem) -> String {
     match item {
         OptiStructItem::Comment(comment) => serialize_optistruct_comment_compact(comment),
+        OptiStructItem::Text(text) => serialize_optistruct_text_compact(text),
         OptiStructItem::Card(card) => serialize_optistruct_card_compact(card),
     }
 }
@@ -136,6 +145,46 @@ fn serialize_optistruct_card_compact(card: &OptiStructCardItem) -> String {
         serialize_optistruct_kind_label(&card.kind),
         serialize_optistruct_card_attributes(&card.kind)
     )
+}
+
+fn serialize_optistruct_text_compact(text: &OptiStructTextItem) -> String {
+    format!(
+        "{{\"id\":\"{}\",\"type\":\"Text\",\"location\":{},\"text\":\"{}\"}}",
+        escape(&text.id),
+        serialize_optistruct_location_compact(&text.location),
+        escape(&text.text)
+    )
+}
+
+fn serialize_optistruct_file_summary_compact(summary: &OptiStructFileSummary) -> String {
+    format!(
+        "{{\"file_id\":\"{}\",\"file_name\":\"{}\",\"file_path\":\"{}\",\"total_items\":{},\"comment_items\":{},\"hypermesh_comment_items\":{},\"text_items\":{},\"card_items\":{},\"card_counts\":{}}}",
+        escape(&summary.file_id),
+        escape(&summary.file_name),
+        escape(&summary.file_path.display().to_string()),
+        summary.total_items,
+        summary.comment_items,
+        summary.hypermesh_comment_items,
+        summary.text_items,
+        summary.card_items,
+        serialize_optistruct_card_counts(&summary.card_counts)
+    )
+}
+
+fn serialize_optistruct_card_counts(values: &[crate::model::OptiStructCardCount]) -> String {
+    let mut out = String::from("[");
+    for (index, entry) in values.iter().enumerate() {
+        if index > 0 {
+            out.push(',');
+        }
+        out.push_str(&format!(
+            "{{\"card_name\":\"{}\",\"count\":{}}}",
+            escape(&entry.card_name),
+            entry.count
+        ));
+    }
+    out.push(']');
+    out
 }
 
 fn serialize_hypermesh_comment_fields(fields: &HyperMeshCommentFields) -> String {

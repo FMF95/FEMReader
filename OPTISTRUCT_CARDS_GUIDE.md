@@ -9,6 +9,7 @@ El parser está en `src/optistruct.rs` y produce `optistruct_items` en `ModelCon
 Cada item es:
 
 - `Comment`: comentario `$...` con clasificación (`Comment` o `HyperMesh Comment`)
+- `Text`: línea no comentario sin parser de tarjeta específico (se conserva tal cual)
 - `Card`: tarjeta de OptiStruct con:
   - `id` único del ítem
   - `location` (`file_id`, `file_path`, `start_line`, `end_line`, `ordinal`)
@@ -31,7 +32,7 @@ Cada item es:
 | `BEGIN BULK` | `BeginBulkCard` | marcador de inicio del bloque bulk |
 | `ENDDATA` | `EndDataCard` | marcador de cierre del bloque de datos |
 
-Las tarjetas no tipadas se guardan como `OptiStructCardKind::Unknown`.
+Solo se parsean por campos las tarjetas con parser específico. Las líneas no soportadas se conservan como `Text`.
 
 Comentarios HyperMesh detectados automáticamente:
 
@@ -72,6 +73,7 @@ Casos cubiertos:
 - Mantener `fields` con orden original para depuración.
 - Usar `Option<T>` en campos numéricos para evitar perder la tarjeta si un campo es inválido.
 - No eliminar comentarios: conservarlos como `Comment` con su línea original.
+- No forzar parseo de líneas no soportadas: mantenerlas como `Text`.
 - Si el comentario coincide con prefijos HyperMesh, marcarlo como `HyperMesh Comment`.
 - Evitar mezclar reglas de solver en el parser: la selección de adapter vive en `dependency.rs`.
 
@@ -81,3 +83,12 @@ Casos cubiertos:
 - Formato largo: 16 caracteres por campo (`CARD*` en primera columna).
 - Continuación: línea que comienza por `*`.
 - Comentarios: `$` (línea completa o inline).
+
+## 6. Resumen por archivo
+
+Además de `optistruct_items`, se genera `optistruct_file_summaries` con:
+
+- totales por archivo (`total_items`, `card_items`, `comment_items`, `hypermesh_comment_items`, `text_items`)
+- conteo por tarjeta (`card_counts`)
+
+Esto permite construir resúmenes por modelo (por ejemplo, total de `CQUAD4` o total de comentarios) sumando los archivos de ese modelo.

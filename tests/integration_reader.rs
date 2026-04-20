@@ -348,6 +348,7 @@ ENDDATA
         .iter()
         .filter(|item| match item {
             OptiStructItem::Comment(comment) => comment.location.file_id == main_id,
+            OptiStructItem::Text(text) => text.location.file_id == main_id,
             OptiStructItem::Card(card) => card.location.file_id == main_id,
         })
         .collect::<Vec<_>>();
@@ -443,6 +444,7 @@ ENDDATA
                 _ => None,
             },
             OptiStructItem::Comment(_) => None,
+            OptiStructItem::Text(_) => None,
         })
         .expect("include card should exist");
 
@@ -454,6 +456,21 @@ ENDDATA
             .dependencies
             .iter()
             .any(|edge| edge.from_file_id == main_id && edge.reference == "submodel.fem")
+    );
+    let main_summary = content
+        .optistruct_file_summaries
+        .iter()
+        .find(|summary| summary.file_id == main_id)
+        .expect("main file summary should exist");
+    assert_eq!(main_summary.card_items, 8);
+    assert_eq!(main_summary.comment_items, 3);
+    assert_eq!(main_summary.hypermesh_comment_items, 2);
+    assert_eq!(main_summary.text_items, 0);
+    assert!(
+        main_summary
+            .card_counts
+            .iter()
+            .any(|entry| entry.card_name == "CQUAD4" && entry.count == 1)
     );
 
     fs::remove_dir_all(&root).expect("cleanup temp root");
@@ -589,6 +606,18 @@ fn generates_unique_ids_and_populates_name_fields() {
                         .unwrap_or_else(|| comment.location.file_path.display().to_string())
                 );
             }
+            OptiStructItem::Text(text) => {
+                assert!(item_ids.insert(text.id.clone()));
+                assert!(text.id.chars().all(|ch| ch.is_ascii_hexdigit()));
+                assert_eq!(
+                    text.location.file_name,
+                    text.location
+                        .file_path
+                        .file_name()
+                        .map(|name| name.to_string_lossy().to_string())
+                        .unwrap_or_else(|| text.location.file_path.display().to_string())
+                );
+            }
             OptiStructItem::Card(card) => {
                 assert!(item_ids.insert(card.id.clone()));
                 assert!(card.id.chars().all(|ch| ch.is_ascii_hexdigit()));
@@ -603,6 +632,58 @@ fn generates_unique_ids_and_populates_name_fields() {
             }
         }
     }
+
+    fs::remove_dir_all(&root).expect("cleanup temp root");
+}
+
+#[test]
+fn preserves_unparsed_lines_and_builds_optistruct_file_summaries() {
+    let root = unique_temp_dir("optistruct_text_and_summary");
+    fs::create_dir_all(&root).expect("create temp root");
+    let model_file = root.join("model.fem");
+    fs::write(
+        &model_file,
+        "BEGIN BULK\nECHO = NONE\nGRID    1       0       0.0     0.0     0.0\n$ comentario\nENDDATA\n",
+    )
+    .expect("write model");
+
+    let adapters: Vec<Box<dyn SolverAdapter + Send + Sync>> = vec![
+        Box::new(NastranAdapter),
+        Box::new(OptiStructAdapter),
+        Box::new(AbaqusAdapter),
+    ];
+    let pipeline = ReaderPipeline {
+        scanner: DefaultFileSystemScanner,
+        dependency_resolver: DefaultDependencyResolver::new(adapters),
+        model_assembler: DefaultModelAssembler,
+        serializer: JsonSerializer,
+    };
+
+    let mut cache = IncrementalCache::default();
+    let content = pipeline.run(&root, &mut cache).expect("pipeline run");
+    let file_id = file_id_for_path(&content, &model_file);
+
+    assert!(content.optistruct_items.iter().any(|item| matches!(
+        item,
+        OptiStructItem::Text(text)
+            if text.location.file_id == file_id && text.text == "ECHO = NONE"
+    )));
+
+    let summary = content
+        .optistruct_file_summaries
+        .iter()
+        .find(|entry| entry.file_id == file_id)
+        .expect("summary should exist");
+    assert_eq!(summary.total_items, 5);
+    assert_eq!(summary.card_items, 3);
+    assert_eq!(summary.comment_items, 1);
+    assert_eq!(summary.text_items, 1);
+    assert!(
+        summary
+            .card_counts
+            .iter()
+            .any(|entry| entry.card_name == "GRID" && entry.count == 1)
+    );
 
     fs::remove_dir_all(&root).expect("cleanup temp root");
 }

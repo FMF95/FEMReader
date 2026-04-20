@@ -105,6 +105,7 @@ impl ModelAssembler for DefaultModelAssembler {
             dependencies: graph.edges.clone(),
             unresolved_references: graph.unresolved_references.clone(),
             optistruct_items: graph.optistruct_items.clone(),
+            optistruct_file_summaries: graph.optistruct_file_summaries.clone(),
             models,
         }
     }
