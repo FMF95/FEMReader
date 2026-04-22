@@ -1,6 +1,9 @@
 use crate::dependency::DependencyGraph;
 use crate::ids::stable_id;
-use crate::model::{FileCategory, Model, ModelContent, SolverKind};
+use crate::model::{
+    FileCategory, Model, ModelContent, OptiStructCardCount, OptiStructModelSummary, SCHEMA_VERSION,
+    SolverKind,
+};
 use crate::scanner::ScanResult;
 use std::collections::{HashMap, HashSet};
 
@@ -97,8 +100,11 @@ impl ModelAssembler for DefaultModelAssembler {
             });
         }
 
+        let optistruct_model_summaries =
+            build_optistruct_model_summaries(&models, &graph.optistruct_file_summaries);
+
         ModelContent {
-            schema_version: "1.0.0".to_string(),
+            schema_version: SCHEMA_VERSION.to_string(),
             root_directory: scan_result.root_directory.clone(),
             directories: scan_result.directories.clone(),
             files: graph.files.clone(),
@@ -106,6 +112,7 @@ impl ModelAssembler for DefaultModelAssembler {
             unresolved_references: graph.unresolved_references.clone(),
             optistruct_items: graph.optistruct_items.clone(),
             optistruct_file_summaries: graph.optistruct_file_summaries.clone(),
+            optistruct_model_summaries,
             models,
         }
     }
@@ -128,4 +135,63 @@ fn select_solver(file_ids: &[String], id_to_solver: &HashMap<String, SolverKind>
     }
 
     detected.unwrap_or(SolverKind::Unknown)
+}
+
+fn build_optistruct_model_summaries(
+    models: &[Model],
+    file_summaries: &[crate::model::OptiStructFileSummary],
+) -> Vec<OptiStructModelSummary> {
+    let summary_by_file_id = file_summaries
+        .iter()
+        .map(|summary| (summary.file_id.as_str(), summary))
+        .collect::<HashMap<_, _>>();
+
+    let mut model_summaries = Vec::new();
+    for model in models {
+        let mut total_non_empty_lines = 0usize;
+        let mut covered_non_empty_lines = 0usize;
+        let mut total_items = 0usize;
+        let mut comment_items = 0usize;
+        let mut hypermesh_comment_items = 0usize;
+        let mut text_items = 0usize;
+        let mut card_items = 0usize;
+        let mut card_counts = HashMap::<String, usize>::new();
+
+        for file_id in &model.file_ids {
+            let Some(summary) = summary_by_file_id.get(file_id.as_str()) else {
+                continue;
+            };
+            total_non_empty_lines += summary.total_non_empty_lines;
+            covered_non_empty_lines += summary.covered_non_empty_lines;
+            total_items += summary.total_items;
+            comment_items += summary.comment_items;
+            hypermesh_comment_items += summary.hypermesh_comment_items;
+            text_items += summary.text_items;
+            card_items += summary.card_items;
+            for entry in &summary.card_counts {
+                *card_counts.entry(entry.card_name.clone()).or_insert(0) += entry.count;
+            }
+        }
+
+        let mut card_counts = card_counts
+            .into_iter()
+            .map(|(card_name, count)| OptiStructCardCount { card_name, count })
+            .collect::<Vec<_>>();
+        card_counts.sort_by(|left, right| left.card_name.cmp(&right.card_name));
+
+        model_summaries.push(OptiStructModelSummary {
+            model_id: model.id.clone(),
+            model_name: model.name.clone(),
+            total_non_empty_lines,
+            covered_non_empty_lines,
+            line_coverage_ok: total_non_empty_lines == covered_non_empty_lines,
+            total_items,
+            comment_items,
+            hypermesh_comment_items,
+            text_items,
+            card_items,
+            card_counts,
+        });
+    }
+    model_summaries
 }

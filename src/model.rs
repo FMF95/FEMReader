@@ -1,5 +1,8 @@
 use std::path::PathBuf;
 
+// JSON contract version. Bump this when output schema changes (keys, structure, semantics).
+pub const SCHEMA_VERSION: &str = "1.1.0";
+
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum SolverKind {
     Unknown,
@@ -222,6 +225,7 @@ pub enum OptiStructCardKind {
 pub struct OptiStructCardItem {
     pub id: String,
     pub location: OptiStructLocation,
+    pub text: String,
     pub card_name: String,
     pub long_format: bool,
     pub fields: Vec<String>,
@@ -246,6 +250,24 @@ pub struct OptiStructFileSummary {
     pub file_id: String,
     pub file_name: String,
     pub file_path: PathBuf,
+    pub total_non_empty_lines: usize,
+    pub covered_non_empty_lines: usize,
+    pub line_coverage_ok: bool,
+    pub total_items: usize,
+    pub comment_items: usize,
+    pub hypermesh_comment_items: usize,
+    pub text_items: usize,
+    pub card_items: usize,
+    pub card_counts: Vec<OptiStructCardCount>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct OptiStructModelSummary {
+    pub model_id: String,
+    pub model_name: String,
+    pub total_non_empty_lines: usize,
+    pub covered_non_empty_lines: usize,
+    pub line_coverage_ok: bool,
     pub total_items: usize,
     pub comment_items: usize,
     pub hypermesh_comment_items: usize,
@@ -264,5 +286,6 @@ pub struct ModelContent {
     pub unresolved_references: Vec<String>,
     pub optistruct_items: Vec<OptiStructItem>,
     pub optistruct_file_summaries: Vec<OptiStructFileSummary>,
+    pub optistruct_model_summaries: Vec<OptiStructModelSummary>,
     pub models: Vec<Model>,
 }

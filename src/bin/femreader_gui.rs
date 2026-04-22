@@ -149,6 +149,10 @@ impl FemReaderGuiApp {
             Self::render_optistruct_structure(ui, content, model);
         });
 
+        full_width_collapsing(ui, "Resumen OptiStruct del modelo", |ui| {
+            Self::render_optistruct_model_summary(ui, content, model);
+        });
+
         full_width_collapsing(ui, "Resumen OptiStruct por archivo", |ui| {
             Self::render_optistruct_file_summaries(ui, content, model);
         });
@@ -206,9 +210,9 @@ impl FemReaderGuiApp {
                             full_width_collapsing(
                                 ui,
                                 format!(
-                                    "L{} [{}]",
+                                    "L{} [Comment] {}",
                                     comment.location.start_line,
-                                    comment_kind_label(&comment.kind)
+                                    first_visual_line(&comment.text)
                                 ),
                                 |ui| {
                                     ui.label(format!("ID: {}", comment.id));
@@ -231,7 +235,11 @@ impl FemReaderGuiApp {
                         OptiStructItem::Text(text) => {
                             full_width_collapsing(
                                 ui,
-                                format!("L{} [Text]", text.location.start_line),
+                                format!(
+                                    "L{} [Text] {}",
+                                    text.location.start_line,
+                                    first_visual_line(&text.text)
+                                ),
                                 |ui| {
                                     ui.label(format!("ID: {}", text.id));
                                     ui.label(format!("Texto: {}", text.text));
@@ -252,9 +260,10 @@ impl FemReaderGuiApp {
                             };
                             full_width_collapsing(
                                 ui,
-                                format!("{} {}", line_label, card_kind_summary(&card.kind)),
+                                format!("{} [Card] {}", line_label, first_visual_line(&card.text)),
                                 |ui| {
                                     ui.label(format!("ID: {}", card.id));
+                                    ui.label(format!("Línea(s) original(es):\n{}", card.text));
                                     ui.label(format!("Tarjeta: {}", card.card_name));
                                     ui.label(format!("Ordinal: {}", card.location.ordinal));
                                     ui.label(format!(
@@ -266,16 +275,58 @@ impl FemReaderGuiApp {
                                         card.location.file_path.display()
                                     ));
                                     ui.label(format!("File ID: {}", card.location.file_id));
-                                    ui.label("Campos:");
-                                    for (index, value) in card.fields.iter().enumerate() {
-                                        ui.label(format!("  F{} = {}", index + 1, value));
-                                    }
+                                    render_card_named_fields(ui, card);
                                 },
                             );
                         }
                     }
                 }
             });
+        }
+    }
+
+    fn render_optistruct_model_summary(ui: &mut egui::Ui, content: &ModelContent, model: &Model) {
+        let Some(summary) = content
+            .optistruct_model_summaries
+            .iter()
+            .find(|entry| entry.model_id == model.id)
+        else {
+            ui.label("No hay resumen OptiStruct para este modelo.");
+            return;
+        };
+
+        ui.label(format!("Items totales: {}", summary.total_items));
+        ui.label(format!("Tarjetas: {}", summary.card_items));
+        ui.label(format!(
+            "Comentarios: {} (HyperMesh: {})",
+            summary.comment_items, summary.hypermesh_comment_items
+        ));
+        ui.label(format!("Líneas de texto: {}", summary.text_items));
+        ui.label(format!(
+            "Líneas no vacías: {}",
+            summary.total_non_empty_lines
+        ));
+        if summary.line_coverage_ok {
+            ui.label(format!(
+                "Check líneas: OK ({} / {}).",
+                summary.covered_non_empty_lines, summary.total_non_empty_lines
+            ));
+        } else {
+            ui.label(
+                RichText::new(format!(
+                    "Check líneas: revisar ({} / {}).",
+                    summary.covered_non_empty_lines, summary.total_non_empty_lines
+                ))
+                .color(Color32::from_rgb(220, 70, 70)),
+            );
+        }
+        if summary.card_counts.is_empty() {
+            ui.label("Conteo de tarjetas: (sin tarjetas parseadas)");
+        } else {
+            ui.label("Conteo de tarjetas:");
+            for entry in &summary.card_counts {
+                ui.label(format!("  {}: {}", entry.card_name, entry.count));
+            }
         }
     }
 
@@ -292,24 +343,92 @@ impl FemReaderGuiApp {
             return;
         }
 
-        let total_comments: usize = summaries.iter().map(|entry| entry.comment_items).sum();
-        let total_hypermesh_comments: usize = summaries
+        let model_summary = content
+            .optistruct_model_summaries
             .iter()
-            .map(|entry| entry.hypermesh_comment_items)
-            .sum();
-        let total_text_items: usize = summaries.iter().map(|entry| entry.text_items).sum();
-        let total_cards: usize = summaries.iter().map(|entry| entry.card_items).sum();
-        let total_items: usize = summaries.iter().map(|entry| entry.total_items).sum();
+            .find(|summary| summary.model_id == model.id);
+
+        let total_comments = model_summary
+            .map(|summary| summary.comment_items)
+            .unwrap_or_else(|| summaries.iter().map(|entry| entry.comment_items).sum());
+        let total_hypermesh_comments = model_summary
+            .map(|summary| summary.hypermesh_comment_items)
+            .unwrap_or_else(|| {
+                summaries
+                    .iter()
+                    .map(|entry| entry.hypermesh_comment_items)
+                    .sum()
+            });
+        let total_text_items = model_summary
+            .map(|summary| summary.text_items)
+            .unwrap_or_else(|| summaries.iter().map(|entry| entry.text_items).sum());
+        let total_cards = model_summary
+            .map(|summary| summary.card_items)
+            .unwrap_or_else(|| summaries.iter().map(|entry| entry.card_items).sum());
+        let total_items = model_summary
+            .map(|summary| summary.total_items)
+            .unwrap_or_else(|| summaries.iter().map(|entry| entry.total_items).sum());
+        let model_total_non_empty_lines = model_summary
+            .map(|summary| summary.total_non_empty_lines)
+            .unwrap_or_else(|| {
+                summaries
+                    .iter()
+                    .map(|entry| entry.total_non_empty_lines)
+                    .sum()
+            });
+        let model_covered_non_empty_lines = model_summary
+            .map(|summary| summary.covered_non_empty_lines)
+            .unwrap_or_else(|| {
+                summaries
+                    .iter()
+                    .map(|entry| entry.covered_non_empty_lines)
+                    .sum()
+            });
+        let model_line_coverage_ok = model_summary
+            .map(|summary| summary.line_coverage_ok)
+            .unwrap_or(model_total_non_empty_lines == model_covered_non_empty_lines);
         ui.label(format!(
             "Totales del modelo: {} items, {} tarjetas, {} comentarios ({} HyperMesh), {} líneas de texto.",
             total_items, total_cards, total_comments, total_hypermesh_comments, total_text_items
         ));
+        if model_line_coverage_ok {
+            ui.label(format!(
+                "Check líneas (modelo): OK ({} / {}).",
+                model_covered_non_empty_lines, model_total_non_empty_lines
+            ));
+        } else {
+            ui.label(
+                RichText::new(format!(
+                    "Check líneas (modelo): revisar ({} / {}).",
+                    model_covered_non_empty_lines, model_total_non_empty_lines
+                ))
+                .color(Color32::from_rgb(220, 70, 70)),
+            );
+        }
         ui.separator();
 
         for summary in summaries {
             full_width_collapsing(ui, &summary.file_name, |ui| {
                 ui.label(format!("Path: {}", summary.file_path.display()));
                 ui.label(format!("File ID: {}", summary.file_id));
+                ui.label(format!(
+                    "Líneas no vacías: {}",
+                    summary.total_non_empty_lines
+                ));
+                if summary.line_coverage_ok {
+                    ui.label(format!(
+                        "Check líneas: OK ({} / {}).",
+                        summary.covered_non_empty_lines, summary.total_non_empty_lines
+                    ));
+                } else {
+                    ui.label(
+                        RichText::new(format!(
+                            "Check líneas: revisar ({} / {}).",
+                            summary.covered_non_empty_lines, summary.total_non_empty_lines
+                        ))
+                        .color(Color32::from_rgb(220, 70, 70)),
+                    );
+                }
                 ui.label(format!("Items totales: {}", summary.total_items));
                 ui.label(format!("Tarjetas: {}", summary.card_items));
                 ui.label(format!(
@@ -512,57 +631,6 @@ fn solver_label(kind: &SolverKind) -> &'static str {
     }
 }
 
-fn card_kind_summary(kind: &OptiStructCardKind) -> String {
-    match kind {
-        OptiStructCardKind::Grid(card) => format!(
-            "GRID id={} xyz=({}, {}, {})",
-            format_option(card.id),
-            format_option(card.x1),
-            format_option(card.x2),
-            format_option(card.x3)
-        ),
-        OptiStructCardKind::Cquad4(card) => format!(
-            "CQUAD4 id={} pid={} g=({},{},{},{})",
-            format_option(card.id),
-            format_option(card.pid),
-            format_option(card.g1),
-            format_option(card.g2),
-            format_option(card.g3),
-            format_option(card.g4)
-        ),
-        OptiStructCardKind::Ctria3(card) => format!(
-            "CTRIA3 id={} pid={} g=({},{},{})",
-            format_option(card.id),
-            format_option(card.pid),
-            format_option(card.g1),
-            format_option(card.g2),
-            format_option(card.g3)
-        ),
-        OptiStructCardKind::Force(card) => format!(
-            "FORCE sid={} g={} f={} n=({},{},{})",
-            format_option(card.sid),
-            format_option(card.g),
-            format_option(card.f),
-            format_option(card.n1),
-            format_option(card.n2),
-            format_option(card.n3)
-        ),
-        OptiStructCardKind::Moment(card) => format!(
-            "MOMENT sid={} g={} m={} n=({},{},{})",
-            format_option(card.sid),
-            format_option(card.g),
-            format_option(card.m),
-            format_option(card.n1),
-            format_option(card.n2),
-            format_option(card.n3)
-        ),
-        OptiStructCardKind::Include(card) => format!("INCLUDE target={}", card.target),
-        OptiStructCardKind::BeginBulk(_) => "BEGIN BULK".to_string(),
-        OptiStructCardKind::EndData(_) => "ENDDATA".to_string(),
-        OptiStructCardKind::Unknown(card) => format!("{} (sin parser específico)", card.card_name),
-    }
-}
-
 fn full_width_collapsing(
     ui: &mut egui::Ui,
     label: impl Into<egui::WidgetText>,
@@ -634,19 +702,74 @@ fn render_hypermesh_fields(ui: &mut egui::Ui, fields: &HyperMeshCommentFields) {
     }
 }
 
-fn format_option<T: std::fmt::Display>(value: Option<T>) -> String {
-    value
-        .map(|inner| inner.to_string())
-        .unwrap_or_else(|| "-".to_string())
-}
-
 fn format_optional_str(value: Option<&str>) -> &str {
     value.unwrap_or("-")
 }
 
-fn comment_kind_label(kind: &OptiStructCommentKind) -> &'static str {
+fn first_visual_line(text: &str) -> &str {
+    text.lines().next().unwrap_or("")
+}
+
+fn render_card_named_fields(ui: &mut egui::Ui, card: &femreader::model::OptiStructCardItem) {
+    ui.label("Campos:");
+    if card.fields.is_empty() {
+        ui.label("  (sin campos)");
+        return;
+    }
+    let names = card_field_names(&card.kind);
+    for (index, value) in card.fields.iter().enumerate() {
+        if let Some(name) = names.get(index).copied() {
+            ui.label(format!("  {} = {}", name, value));
+        } else {
+            ui.label(format!("  EXTRA_F{} = {}", index + 1, value));
+        }
+    }
+}
+
+fn card_field_names(kind: &OptiStructCardKind) -> Vec<&'static str> {
     match kind {
-        OptiStructCommentKind::Comment => "Comment",
-        OptiStructCommentKind::HyperMeshComment { .. } => "HyperMesh Comment",
+        OptiStructCardKind::Grid(_) => {
+            vec!["CARD", "ID", "CP", "X1", "X2", "X3", "CD", "PS", "SEID"]
+        }
+        OptiStructCardKind::Cquad4(_) => vec![
+            "CARD",
+            "ID",
+            "PID",
+            "G1",
+            "G2",
+            "G3",
+            "G4",
+            "THETA_OR_MCID",
+            "ZOFFS",
+            "TFLAG",
+            "T1",
+            "T2",
+            "T3",
+            "T4",
+        ],
+        OptiStructCardKind::Ctria3(_) => vec![
+            "CARD",
+            "ID",
+            "PID",
+            "G1",
+            "G2",
+            "G3",
+            "THETA_OR_MCID",
+            "ZOFFS",
+            "TFLAG",
+            "T1",
+            "T2",
+            "T3",
+        ],
+        OptiStructCardKind::Force(_) => {
+            vec!["CARD", "SID", "G", "CID", "F", "N1", "N2", "N3"]
+        }
+        OptiStructCardKind::Moment(_) => {
+            vec!["CARD", "SID", "G", "CID", "M", "N1", "N2", "N3"]
+        }
+        OptiStructCardKind::Include(_) => vec!["CARD", "TARGET"],
+        OptiStructCardKind::BeginBulk(_) => Vec::new(),
+        OptiStructCardKind::EndData(_) => Vec::new(),
+        OptiStructCardKind::Unknown(_) => vec!["CARD"],
     }
 }

@@ -14,6 +14,7 @@ struct RawCardRecord {
     name: String,
     long_format: bool,
     fields: Vec<String>,
+    text: String,
     start_line: usize,
     end_line: usize,
 }
@@ -114,6 +115,7 @@ pub fn parse_file_items(file_id: &str, file_path: &Path, content: &str) -> Vec<O
                 items.push(OptiStructItem::Card(OptiStructCardItem {
                     id: item_id,
                     location,
+                    text: card.text,
                     card_name: card.name.clone(),
                     long_format: card.long_format,
                     fields: card.fields,
@@ -129,6 +131,7 @@ pub fn parse_file_items(file_id: &str, file_path: &Path, content: &str) -> Vec<O
 pub fn summarize_file_items(
     file_id: &str,
     file_path: &Path,
+    content: &str,
     items: &[OptiStructItem],
 ) -> OptiStructFileSummary {
     let mut comment_items = 0usize;
@@ -159,11 +162,16 @@ pub fn summarize_file_items(
         .into_iter()
         .map(|(card_name, count)| OptiStructCardCount { card_name, count })
         .collect::<Vec<_>>();
+    let total_non_empty_lines = count_non_empty_lines(content);
+    let covered_non_empty_lines = count_covered_non_empty_lines(items);
 
     OptiStructFileSummary {
         file_id: file_id.to_string(),
         file_name: leaf_name(file_path),
         file_path: file_path.to_path_buf(),
+        total_non_empty_lines,
+        covered_non_empty_lines,
+        line_coverage_ok: covered_non_empty_lines == total_non_empty_lines,
         total_items: items.len(),
         comment_items,
         hypermesh_comment_items,
@@ -326,18 +334,7 @@ fn parse_card_kind(card_name: &str, fields: &[String]) -> OptiStructCardKind {
         "INCLUDE" => OptiStructCardKind::Include(IncludeCard {
             target: parse_include_target(fields).unwrap_or_default(),
         }),
-        "BEGIN" => {
-            if fields
-                .first()
-                .is_some_and(|field| field.eq_ignore_ascii_case("BULK"))
-            {
-                OptiStructCardKind::BeginBulk(BeginBulkCard)
-            } else {
-                OptiStructCardKind::Unknown(UnknownCard {
-                    card_name: card_name.to_string(),
-                })
-            }
-        }
+        "BEGIN BULK" => OptiStructCardKind::BeginBulk(BeginBulkCard),
         "ENDDATA" => OptiStructCardKind::EndData(EndDataCard),
         _ => OptiStructCardKind::Unknown(UnknownCard {
             card_name: card_name.to_string(),
@@ -454,7 +451,7 @@ fn tokenize_hypermesh_fields(text: &str) -> Vec<String> {
 }
 
 fn field_string(fields: &[String], index: usize) -> Option<String> {
-    fields.get(index).and_then(|value| {
+    fields.get(index + 1).and_then(|value| {
         let normalized = value.trim();
         if normalized.is_empty() {
             None
@@ -473,7 +470,7 @@ fn field_f64(fields: &[String], index: usize) -> Option<f64> {
 }
 
 fn parse_include_target(fields: &[String]) -> Option<String> {
-    let candidate = fields.join("");
+    let candidate = fields.iter().skip(1).cloned().collect::<Vec<_>>().join("");
     let normalized = candidate.trim().trim_matches('\'').trim_matches('"');
     if normalized.is_empty() {
         None
@@ -487,7 +484,7 @@ fn split_comment(line: &str) -> (&str, Option<String>) {
         return (line, None);
     };
     let payload = &line[..index];
-    let comment = line[index..].trim().to_string();
+    let comment = line[index..].to_string();
     (payload, Some(comment))
 }
 
@@ -511,11 +508,8 @@ fn should_merge_comment_continuation(comment: &str, records: &[RawRecord]) -> bo
 
 fn merge_comment_continuation(comment: &str, line_number: usize, records: &mut [RawRecord]) {
     if let Some(RawRecord::Comment { end_line, text, .. }) = records.last_mut() {
-        let continuation = extract_comment_continuation_fields(comment);
-        if !continuation.is_empty() {
-            text.push('\n');
-            text.push_str(&continuation.join(" "));
-        }
+        text.push('\n');
+        text.push_str(comment);
         *end_line = line_number;
     }
 }
@@ -544,12 +538,12 @@ fn parse_card_start(line: &str, line_number: usize) -> Option<RawCardRecord> {
         .filter(|ch| !ch.is_whitespace())
         .collect::<String>();
     if compact.eq_ignore_ascii_case("BEGINBULK") {
-        return Some(begin_bulk_record(line_number));
+        return Some(begin_bulk_record(line_number, line));
     }
 
     let first_line_slots = split_fixed_width_fields(line, 8, Some(10));
     if is_begin_bulk_slots(&first_line_slots) {
-        return Some(begin_bulk_record(line_number));
+        return Some(begin_bulk_record(line_number, line));
     }
     let first_field = first_line_slots.first()?.clone();
     let first_field = first_field.trim();
@@ -565,15 +559,27 @@ fn parse_card_start(line: &str, line_number: usize) -> Option<RawCardRecord> {
     if !is_supported_card_name(card_name) {
         return None;
     }
+    if card_name.eq_ignore_ascii_case("ENDDATA") {
+        return Some(RawCardRecord {
+            name: "ENDDATA".to_string(),
+            long_format: false,
+            fields: Vec::new(),
+            text: line.to_string(),
+            start_line: line_number,
+            end_line: line_number,
+        });
+    }
 
     let mut fields = if long_format {
         if line.len() > 8 {
-            split_fixed_width_fields(&line[8..], 16, None)
+            let mut fields = vec![first_field.to_string()];
+            fields.extend(split_fixed_width_fields(&line[8..], 16, None));
+            fields
         } else {
-            Vec::new()
+            vec![first_field.to_string()]
         }
     } else {
-        first_line_slots.into_iter().skip(1).collect()
+        first_line_slots
     };
     trim_trailing_empty_fields(&mut fields);
 
@@ -581,12 +587,15 @@ fn parse_card_start(line: &str, line_number: usize) -> Option<RawCardRecord> {
         name: card_name.to_string(),
         long_format,
         fields,
+        text: line.to_string(),
         start_line: line_number,
         end_line: line_number,
     })
 }
 
 fn extend_card_with_continuation(card: &mut RawCardRecord, line: &str, line_number: usize) {
+    card.text.push('\n');
+    card.text.push_str(line);
     let payload = line.trim_start().trim_start_matches('*');
     let width = if card.long_format { 16 } else { 8 };
     let mut continuation_fields = split_fixed_width_fields(payload, width, None);
@@ -595,11 +604,12 @@ fn extend_card_with_continuation(card: &mut RawCardRecord, line: &str, line_numb
     card.end_line = line_number;
 }
 
-fn begin_bulk_record(line_number: usize) -> RawCardRecord {
+fn begin_bulk_record(line_number: usize, raw_line: &str) -> RawCardRecord {
     RawCardRecord {
-        name: "BEGIN".to_string(),
+        name: "BEGIN BULK".to_string(),
         long_format: false,
-        fields: vec!["BULK".to_string()],
+        fields: Vec::new(),
+        text: raw_line.to_string(),
         start_line: line_number,
         end_line: line_number,
     }
@@ -623,8 +633,33 @@ fn is_begin_bulk_slots(slots: &[String]) -> bool {
 fn is_supported_card_name(card_name: &str) -> bool {
     matches!(
         card_name.to_ascii_uppercase().as_str(),
-        "GRID" | "CQUAD4" | "CTRIA3" | "FORCE" | "MOMENT" | "INCLUDE" | "BEGIN" | "ENDDATA"
+        "GRID" | "CQUAD4" | "CTRIA3" | "FORCE" | "MOMENT" | "INCLUDE" | "ENDDATA"
     )
+}
+
+fn count_non_empty_lines(content: &str) -> usize {
+    content
+        .lines()
+        .map(|line| line.trim_end_matches('\r'))
+        .filter(|line| !line.trim().is_empty())
+        .count()
+}
+
+fn count_covered_non_empty_lines(items: &[OptiStructItem]) -> usize {
+    let mut covered = std::collections::BTreeSet::<usize>::new();
+    for item in items {
+        let (start, end) = match item {
+            OptiStructItem::Comment(comment) => {
+                (comment.location.start_line, comment.location.end_line)
+            }
+            OptiStructItem::Text(text) => (text.location.start_line, text.location.end_line),
+            OptiStructItem::Card(card) => (card.location.start_line, card.location.end_line),
+        };
+        for line in start..=end {
+            covered.insert(line);
+        }
+    }
+    covered.len()
 }
 
 fn extract_hypermesh_tag(text: &str) -> Option<String> {
@@ -717,6 +752,7 @@ ENDDATA
         assert!(matches!(cards[5].kind, OptiStructCardKind::Moment(_)));
         assert!(matches!(cards[6].kind, OptiStructCardKind::Include(_)));
         assert!(matches!(cards[7].kind, OptiStructCardKind::EndData(_)));
+        assert_eq!(cards[1].fields.first().map(String::as_str), Some("GRID"));
 
         if let OptiStructCardKind::Grid(grid) = &cards[1].kind {
             assert_eq!(grid.id, Some(100));
@@ -1000,8 +1036,10 @@ $HMNAME COMP                   1\"Plate\"
             .collect::<Vec<_>>();
 
         assert!(matches!(cards[0].kind, OptiStructCardKind::BeginBulk(_)));
-        assert_eq!(cards[0].card_name, "BEGIN");
-        assert_eq!(cards[0].fields, vec!["BULK".to_string()]);
+        assert_eq!(cards[0].card_name, "BEGIN BULK");
+        assert!(cards[0].fields.is_empty());
+        assert!(matches!(cards[2].kind, OptiStructCardKind::EndData(_)));
+        assert!(cards[2].fields.is_empty());
     }
 
     #[test]
@@ -1041,9 +1079,12 @@ UNPARSED
 CQUAD4  10      5       1       2       3       4
 ";
         let items = parse_file_items("file:sum", Path::new("sum.fem"), content);
-        let summary = summarize_file_items("file:sum", Path::new("sum.fem"), &items);
+        let summary = summarize_file_items("file:sum", Path::new("sum.fem"), content, &items);
 
         assert_eq!(summary.total_items, 5);
+        assert_eq!(summary.total_non_empty_lines, 5);
+        assert_eq!(summary.covered_non_empty_lines, 5);
+        assert!(summary.line_coverage_ok);
         assert_eq!(summary.comment_items, 2);
         assert_eq!(summary.hypermesh_comment_items, 1);
         assert_eq!(summary.text_items, 1);

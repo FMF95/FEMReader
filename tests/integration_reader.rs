@@ -399,6 +399,17 @@ ENDDATA
             OptiStructItem::Card(card) if matches!(card.kind, OptiStructCardKind::BeginBulk(_))
         )
     }));
+    let begin_bulk_card = main_items
+        .iter()
+        .find_map(|item| match item {
+            OptiStructItem::Card(card) if matches!(card.kind, OptiStructCardKind::BeginBulk(_)) => {
+                Some(card)
+            }
+            _ => None,
+        })
+        .expect("BEGIN BULK card should exist");
+    assert_eq!(begin_bulk_card.card_name, "BEGIN BULK");
+    assert!(begin_bulk_card.fields.is_empty());
     assert!(
         main_items.iter().any(
             |item| matches!(item, OptiStructItem::Card(card) if matches!(card.kind, OptiStructCardKind::Grid(_)))
@@ -435,6 +446,16 @@ ENDDATA
             OptiStructItem::Card(card) if matches!(card.kind, OptiStructCardKind::EndData(_))
         )
     }));
+    let enddata_card = main_items
+        .iter()
+        .find_map(|item| match item {
+            OptiStructItem::Card(card) if matches!(card.kind, OptiStructCardKind::EndData(_)) => {
+                Some(card)
+            }
+            _ => None,
+        })
+        .expect("ENDDATA card should exist");
+    assert!(enddata_card.fields.is_empty());
 
     let include_card = main_items
         .iter()
@@ -466,12 +487,20 @@ ENDDATA
     assert_eq!(main_summary.comment_items, 3);
     assert_eq!(main_summary.hypermesh_comment_items, 2);
     assert_eq!(main_summary.text_items, 0);
+    assert!(main_summary.line_coverage_ok);
     assert!(
         main_summary
             .card_counts
             .iter()
             .any(|entry| entry.card_name == "CQUAD4" && entry.count == 1)
     );
+    let model_summary = content
+        .optistruct_model_summaries
+        .iter()
+        .find(|summary| summary.model_id == content.models[0].id)
+        .expect("model summary should exist");
+    assert!(model_summary.card_items >= 8);
+    assert!(model_summary.line_coverage_ok);
 
     fs::remove_dir_all(&root).expect("cleanup temp root");
 }
@@ -675,6 +704,9 @@ fn preserves_unparsed_lines_and_builds_optistruct_file_summaries() {
         .find(|entry| entry.file_id == file_id)
         .expect("summary should exist");
     assert_eq!(summary.total_items, 5);
+    assert_eq!(summary.total_non_empty_lines, 5);
+    assert_eq!(summary.covered_non_empty_lines, 5);
+    assert!(summary.line_coverage_ok);
     assert_eq!(summary.card_items, 3);
     assert_eq!(summary.comment_items, 1);
     assert_eq!(summary.text_items, 1);
@@ -684,6 +716,14 @@ fn preserves_unparsed_lines_and_builds_optistruct_file_summaries() {
             .iter()
             .any(|entry| entry.card_name == "GRID" && entry.count == 1)
     );
+    let model_summary = content
+        .optistruct_model_summaries
+        .iter()
+        .find(|entry| entry.model_id == content.models[0].id)
+        .expect("model summary should exist");
+    assert_eq!(model_summary.total_items, 5);
+    assert_eq!(model_summary.text_items, 1);
+    assert!(model_summary.line_coverage_ok);
 
     fs::remove_dir_all(&root).expect("cleanup temp root");
 }

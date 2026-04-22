@@ -101,6 +101,7 @@ impl DependencyResolver for DefaultDependencyResolver {
                 optistruct_file_summaries.push(optistruct::summarize_file_items(
                     &file.id,
                     &file.path,
+                    &content,
                     &file_items,
                 ));
                 optistruct_items.extend(file_items);

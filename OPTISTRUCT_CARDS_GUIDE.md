@@ -14,10 +14,11 @@ Cada item es:
   - `id` único del ítem
   - `location` (`file_id`, `file_path`, `start_line`, `end_line`, `ordinal`)
   - `location.file_name`
+  - `text` (línea(s) original(es) sin reescritura)
   - `card_name`
   - `long_format` (16 chars/campo) o formato corto (8 chars/campo)
-  - `fields` (campos crudos)
-  - `kind` (tarjeta tipada)
+  - `fields` (campos crudos, incluyendo `F1` como tipo de tarjeta)
+  - `attributes` (campos tipados de la tarjeta en JSON)
 
 ## 2. Tarjetas ya implementadas
 
@@ -33,6 +34,12 @@ Cada item es:
 | `ENDDATA` | `EndDataCard` | marcador de cierre del bloque de datos |
 
 Solo se parsean por campos las tarjetas con parser específico. Las líneas no soportadas se conservan como `Text`.
+
+Notas de campos:
+
+- En formato corto, se preservan hasta `F1..F10` por línea de tarjeta.
+- `F1` corresponde al primer campo (tipo de tarjeta), por ejemplo `GRID`.
+- Excepción: `BEGIN BULK` y `ENDDATA` son tarjetas sin campos (`fields: []`).
 
 Comentarios HyperMesh detectados automáticamente:
 
@@ -62,10 +69,10 @@ Casos cubiertos:
 2. Añade la variante en `OptiStructCardKind`.
 3. En `src/optistruct.rs`, extiende `parse_card_kind` con el nombre de la tarjeta y mapeo de campos.
 4. Extiende serialización en `src/serializer.rs`:
-   - `serialize_optistruct_kind_label`
+   - `serialize_optistruct_item_compact`
    - `serialize_optistruct_card_attributes`
    - función específica de serialización.
-5. Extiende visualización en GUI (`src/bin/femreader_gui.rs`) en `card_kind_summary`.
+5. Extiende visualización en GUI (`src/bin/femreader_gui.rs`) en `render_card_named_fields`.
 6. Añade tests unitarios en `src/optistruct.rs` y, si aplica, un test de integración en `tests/integration_reader.rs`.
 
 ## 4. Convenciones recomendadas
@@ -88,7 +95,10 @@ Casos cubiertos:
 
 Además de `optistruct_items`, se genera `optistruct_file_summaries` con:
 
+- check de cobertura de líneas (`total_non_empty_lines`, `covered_non_empty_lines`, `line_coverage_ok`)
 - totales por archivo (`total_items`, `card_items`, `comment_items`, `hypermesh_comment_items`, `text_items`)
 - conteo por tarjeta (`card_counts`)
 
 Esto permite construir resúmenes por modelo (por ejemplo, total de `CQUAD4` o total de comentarios) sumando los archivos de ese modelo.
+
+También se expone `optistruct_model_summaries` con los mismos conteos agregados por modelo.

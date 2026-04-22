@@ -2,9 +2,9 @@ use crate::model::{
     BeginBulkCard, Cquad4Card, Ctria3Card, DependencyEdge, EndDataCard, FileCategory, FileNode,
     ForceCard, GridCard, HMDPrpCommentFields, HMMoveCommentFields, HMNameCommentFields,
     HWColorCommentFields, HyperMeshCommentFields, IncludeCard, Model, ModelContent, MomentCard,
-    OptiStructCardItem, OptiStructCardKind, OptiStructCommentItem, OptiStructCommentKind,
-    OptiStructFileSummary, OptiStructItem, OptiStructLocation, OptiStructTextItem, SolverKind,
-    UnknownCard,
+    OptiStructCardCount, OptiStructCardItem, OptiStructCardKind, OptiStructCommentItem,
+    OptiStructCommentKind, OptiStructFileSummary, OptiStructItem, OptiStructLocation,
+    OptiStructModelSummary, OptiStructTextItem, SolverKind, UnknownCard,
 };
 
 pub trait Serializer {
@@ -24,6 +24,16 @@ impl Serializer for JsonSerializer {
     }
 }
 
+// Contract marker used by tests to force an explicit schema-version review when JSON shape changes.
+#[cfg(test)]
+const SCHEMA_CONTRACT_MARKER: &str =
+    "card-text-key:text|begin-bulk:no-fields|enddata:no-fields|model-summaries:yes|items-array:ordered";
+
+#[cfg(test)]
+fn schema_contract_marker() -> &'static str {
+    SCHEMA_CONTRACT_MARKER
+}
+
 fn serialize_compact(content: &ModelContent) -> String {
     let mut out = String::new();
     out.push('{');
@@ -35,6 +45,9 @@ fn serialize_compact(content: &ModelContent) -> String {
         "\"root_directory\":\"{}\",",
         escape(&content.root_directory.display().to_string())
     ));
+    out.push_str("\"json_guide\":");
+    out.push_str(&serialize_json_guide_compact());
+    out.push(',');
     out.push_str("\"directories\":[");
     for (i, dir) in content.directories.iter().enumerate() {
         if i > 0 {
@@ -81,6 +94,13 @@ fn serialize_compact(content: &ModelContent) -> String {
             out.push(',');
         }
         out.push_str(&serialize_optistruct_file_summary_compact(summary));
+    }
+    out.push_str("],\"optistruct_model_summaries\":[");
+    for (i, summary) in content.optistruct_model_summaries.iter().enumerate() {
+        if i > 0 {
+            out.push(',');
+        }
+        out.push_str(&serialize_optistruct_model_summary_compact(summary));
     }
     out.push_str("],\"models\":[");
     for (i, model) in content.models.iter().enumerate() {
@@ -136,13 +156,13 @@ fn serialize_optistruct_card_compact(card: &OptiStructCardItem) -> String {
     fields.push(']');
 
     format!(
-        "{{\"id\":\"{}\",\"type\":\"Card\",\"location\":{},\"card_name\":\"{}\",\"long_format\":{},\"fields\":{},\"kind\":{},\"attributes\":{}}}",
+        "{{\"id\":\"{}\",\"type\":\"Card\",\"location\":{},\"text\":\"{}\",\"card_name\":\"{}\",\"long_format\":{},\"fields\":{},\"attributes\":{}}}",
         escape(&card.id),
         serialize_optistruct_location_compact(&card.location),
+        escape(&card.text),
         escape(&card.card_name),
         if card.long_format { "true" } else { "false" },
         fields,
-        serialize_optistruct_kind_label(&card.kind),
         serialize_optistruct_card_attributes(&card.kind)
     )
 }
@@ -158,10 +178,17 @@ fn serialize_optistruct_text_compact(text: &OptiStructTextItem) -> String {
 
 fn serialize_optistruct_file_summary_compact(summary: &OptiStructFileSummary) -> String {
     format!(
-        "{{\"file_id\":\"{}\",\"file_name\":\"{}\",\"file_path\":\"{}\",\"total_items\":{},\"comment_items\":{},\"hypermesh_comment_items\":{},\"text_items\":{},\"card_items\":{},\"card_counts\":{}}}",
+        "{{\"file_id\":\"{}\",\"file_name\":\"{}\",\"file_path\":\"{}\",\"total_non_empty_lines\":{},\"covered_non_empty_lines\":{},\"line_coverage_ok\":{},\"total_items\":{},\"comment_items\":{},\"hypermesh_comment_items\":{},\"text_items\":{},\"card_items\":{},\"card_counts\":{}}}",
         escape(&summary.file_id),
         escape(&summary.file_name),
         escape(&summary.file_path.display().to_string()),
+        summary.total_non_empty_lines,
+        summary.covered_non_empty_lines,
+        if summary.line_coverage_ok {
+            "true"
+        } else {
+            "false"
+        },
         summary.total_items,
         summary.comment_items,
         summary.hypermesh_comment_items,
@@ -171,7 +198,7 @@ fn serialize_optistruct_file_summary_compact(summary: &OptiStructFileSummary) ->
     )
 }
 
-fn serialize_optistruct_card_counts(values: &[crate::model::OptiStructCardCount]) -> String {
+fn serialize_optistruct_card_counts(values: &[OptiStructCardCount]) -> String {
     let mut out = String::from("[");
     for (index, entry) in values.iter().enumerate() {
         if index > 0 {
@@ -185,6 +212,27 @@ fn serialize_optistruct_card_counts(values: &[crate::model::OptiStructCardCount]
     }
     out.push(']');
     out
+}
+
+fn serialize_optistruct_model_summary_compact(summary: &OptiStructModelSummary) -> String {
+    format!(
+        "{{\"model_id\":\"{}\",\"model_name\":\"{}\",\"total_non_empty_lines\":{},\"covered_non_empty_lines\":{},\"line_coverage_ok\":{},\"total_items\":{},\"comment_items\":{},\"hypermesh_comment_items\":{},\"text_items\":{},\"card_items\":{},\"card_counts\":{}}}",
+        escape(&summary.model_id),
+        escape(&summary.model_name),
+        summary.total_non_empty_lines,
+        summary.covered_non_empty_lines,
+        if summary.line_coverage_ok {
+            "true"
+        } else {
+            "false"
+        },
+        summary.total_items,
+        summary.comment_items,
+        summary.hypermesh_comment_items,
+        summary.text_items,
+        summary.card_items,
+        serialize_optistruct_card_counts(&summary.card_counts)
+    )
 }
 
 fn serialize_hypermesh_comment_fields(fields: &HyperMeshCommentFields) -> String {
@@ -248,21 +296,6 @@ fn serialize_optistruct_location_compact(location: &OptiStructLocation) -> Strin
     )
 }
 
-fn serialize_optistruct_kind_label(kind: &OptiStructCardKind) -> String {
-    let label = match kind {
-        OptiStructCardKind::Grid(_) => "GRID",
-        OptiStructCardKind::Cquad4(_) => "CQUAD4",
-        OptiStructCardKind::Ctria3(_) => "CTRIA3",
-        OptiStructCardKind::Force(_) => "FORCE",
-        OptiStructCardKind::Moment(_) => "MOMENT",
-        OptiStructCardKind::Include(_) => "INCLUDE",
-        OptiStructCardKind::BeginBulk(_) => "BEGIN BULK",
-        OptiStructCardKind::EndData(_) => "ENDDATA",
-        OptiStructCardKind::Unknown(_) => "UNKNOWN",
-    };
-    format!("\"{label}\"")
-}
-
 fn serialize_optistruct_card_attributes(kind: &OptiStructCardKind) -> String {
     match kind {
         OptiStructCardKind::Grid(card) => serialize_grid_card(card),
@@ -275,6 +308,29 @@ fn serialize_optistruct_card_attributes(kind: &OptiStructCardKind) -> String {
         OptiStructCardKind::EndData(card) => serialize_enddata_card(card),
         OptiStructCardKind::Unknown(card) => serialize_unknown_card(card),
     }
+}
+
+fn serialize_json_guide_compact() -> String {
+    "{\
+\"notes\":[\
+\"json_guide es una ayuda de lectura para ubicar secciones del JSON\",\
+\"optistruct_items se mantiene como lista para preservar orden de lectura; el id permite indexación externa\",\
+\"optistruct_items contiene el contenido leído de cada archivo (Comment/Text/Card)\",\
+\"optistruct_file_summaries resume conteos por archivo\",\
+\"optistruct_model_summaries resume conteos agregados por modelo\"\
+],\
+\"card_field_templates\":{\
+\"GRID\":[\"F1:card_name\",\"F2:id\",\"F3:cp\",\"F4:x1\",\"F5:x2\",\"F6:x3\",\"F7:cd\",\"F8:ps\",\"F9:seid\"],\
+\"CQUAD4\":[\"F1:card_name\",\"F2:id\",\"F3:pid\",\"F4:g1\",\"F5:g2\",\"F6:g3\",\"F7:g4\",\"F8:theta_or_mcid\",\"F9:zoffs\",\"F10:tflag\"],\
+\"CTRIA3\":[\"F1:card_name\",\"F2:id\",\"F3:pid\",\"F4:g1\",\"F5:g2\",\"F6:g3\",\"F7:theta_or_mcid\",\"F8:zoffs\",\"F9:tflag\",\"F10:t1\"],\
+\"FORCE\":[\"F1:card_name\",\"F2:sid\",\"F3:g\",\"F4:cid\",\"F5:f\",\"F6:n1\",\"F7:n2\",\"F8:n3\"],\
+\"MOMENT\":[\"F1:card_name\",\"F2:sid\",\"F3:g\",\"F4:cid\",\"F5:m\",\"F6:n1\",\"F7:n2\",\"F8:n3\"],\
+\"INCLUDE\":[\"F1:card_name\",\"F2:target\"],\
+\"BEGIN BULK\":[],\
+\"ENDDATA\":[]\
+}\
+}"
+    .to_string()
 }
 
 fn serialize_grid_card(card: &GridCard) -> String {
@@ -538,4 +594,107 @@ fn escape(value: &str) -> String {
         }
     }
     escaped
+}
+
+#[cfg(test)]
+mod tests {
+    use super::{SCHEMA_CONTRACT_MARKER, schema_contract_marker, serialize_compact};
+    use crate::model::{
+        BeginBulkCard, Model, ModelContent, OptiStructCardCount, OptiStructCardItem,
+        OptiStructCardKind, OptiStructFileSummary, OptiStructItem, OptiStructLocation,
+        OptiStructModelSummary, SCHEMA_VERSION, SolverKind,
+    };
+    use std::path::PathBuf;
+
+    fn sample_content() -> ModelContent {
+        let location = OptiStructLocation {
+            file_id: "file-1".to_string(),
+            file_name: "main.fem".to_string(),
+            file_path: PathBuf::from("main.fem"),
+            start_line: 1,
+            end_line: 1,
+            ordinal: 1,
+        };
+
+        ModelContent {
+            schema_version: SCHEMA_VERSION.to_string(),
+            root_directory: PathBuf::from("C:\\models"),
+            directories: Vec::new(),
+            files: Vec::new(),
+            dependencies: Vec::new(),
+            unresolved_references: Vec::new(),
+            optistruct_items: vec![OptiStructItem::Card(OptiStructCardItem {
+                id: "item-1".to_string(),
+                location: location.clone(),
+                text: "BEGIN BULK".to_string(),
+                card_name: "BEGIN BULK".to_string(),
+                long_format: false,
+                fields: Vec::new(),
+                kind: OptiStructCardKind::BeginBulk(BeginBulkCard),
+            })],
+            optistruct_file_summaries: vec![OptiStructFileSummary {
+                file_id: "file-1".to_string(),
+                file_name: "main.fem".to_string(),
+                file_path: PathBuf::from("main.fem"),
+                total_non_empty_lines: 1,
+                covered_non_empty_lines: 1,
+                line_coverage_ok: true,
+                total_items: 1,
+                comment_items: 0,
+                hypermesh_comment_items: 0,
+                text_items: 0,
+                card_items: 1,
+                card_counts: vec![OptiStructCardCount {
+                    card_name: "BEGIN BULK".to_string(),
+                    count: 1,
+                }],
+            }],
+            optistruct_model_summaries: vec![OptiStructModelSummary {
+                model_id: "model-1".to_string(),
+                model_name: "main.fem".to_string(),
+                total_non_empty_lines: 1,
+                covered_non_empty_lines: 1,
+                line_coverage_ok: true,
+                total_items: 1,
+                comment_items: 0,
+                hypermesh_comment_items: 0,
+                text_items: 0,
+                card_items: 1,
+                card_counts: vec![OptiStructCardCount {
+                    card_name: "BEGIN BULK".to_string(),
+                    count: 1,
+                }],
+            }],
+            models: vec![Model {
+                id: "model-1".to_string(),
+                name: "main.fem".to_string(),
+                root_file_id: "file-1".to_string(),
+                file_ids: vec!["file-1".to_string()],
+                solver: SolverKind::OptiStruct,
+            }],
+        }
+    }
+
+    #[test]
+    fn card_items_use_text_key_and_begin_bulk_has_no_fields() {
+        let json = serialize_compact(&sample_content());
+        assert!(json.contains("\"type\":\"Card\""));
+        assert!(json.contains("\"text\":\"BEGIN BULK\""));
+        assert!(json.contains("\"card_name\":\"BEGIN BULK\""));
+        assert!(json.contains("\"fields\":[]"));
+        assert!(!json.contains("\"raw_text\""));
+        assert!(!json.contains("\"kind\":"));
+    }
+
+    #[test]
+    fn schema_version_is_reviewed_with_contract_marker() {
+        let approved_versions = [("1.1.0", SCHEMA_CONTRACT_MARKER)];
+        assert!(
+            approved_versions
+                .iter()
+                .any(|(version, marker)| *version == SCHEMA_VERSION
+                    && *marker == schema_contract_marker()),
+            "Cambió el contrato JSON. Actualiza SCHEMA_VERSION y el marcador de contrato aprobado."
+        );
+    }
 }

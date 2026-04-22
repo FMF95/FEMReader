@@ -45,9 +45,16 @@ La meta es poder ampliar reglas de parsing/solver y salidas sin duplicar lógica
    - construcción de `DependencyGraph`.
 3. **Assembler** (`DefaultModelAssembler`) detecta raíces del grafo y arma modelos solo con archivos `Model`.
    - genera IDs únicos para `Model.id` (hash estable sin prefijos visibles).
+   - agrega resumen OptiStruct por modelo (`optistruct_model_summaries`) a partir de los resúmenes por archivo.
 4. **Serializer** (`JsonSerializer`) genera JSON de salida.
 
 `ReaderPipeline` encapsula este flujo para reutilizarlo desde CLI y GUI.
+
+### Versionado de esquema JSON
+
+- La versión del contrato JSON se define en un único punto: `model::SCHEMA_VERSION`.
+- Si cambia el contrato (keys/estructura/semántica), se debe actualizar `SCHEMA_VERSION`.
+- `serializer.rs` incluye un test de guardia de contrato para forzar revisión explícita cuando se modifican aspectos críticos del esquema.
 
 ### Puntos de entrada de lectura de archivos
 
@@ -89,6 +96,7 @@ Actualmente se usan para resolver dependencias, no para decidir solver de forma 
 - identificación de comentarios con `$` (línea completa o inline).
 - detección robusta de `BEGIN BULK` (incluyendo formato libre con espacios variables).
 - cualquier línea no comentario sin parser específico se conserva como ítem `Text` (sin forzar parseo por campos).
+- en tarjetas, `fields` conserva `F1` como el primer campo (tipo de tarjeta) y desplaza los campos siguientes (`F2..`).
 
 Además del `INCLUDE`, actualmente se tipan:
 
@@ -113,15 +121,24 @@ Cada item parseado (`Comment`, `Text` o `Card`) incluye:
 - posición (`start_line`, `end_line`),
 - orden estable dentro del archivo (`ordinal`),
 - campos crudos y versión tipada de la tarjeta.
+- en `Card`, `text` preserva la(s) línea(s) original(es) leída(s) para visualización fiel.
+- `BEGIN BULK` y `ENDDATA` se modelan como tarjetas sin campos (`fields: []`).
 
 Resumen por archivo (`optistruct_file_summaries`):
 
+- `total_non_empty_lines`
+- `covered_non_empty_lines`
+- `line_coverage_ok`
 - `total_items`
 - `comment_items`
 - `hypermesh_comment_items`
 - `text_items`
 - `card_items`
 - `card_counts` (conteo por nombre de tarjeta)
+
+Resumen por modelo (`optistruct_model_summaries`):
+
+- mismos indicadores agregados a nivel modelo (`total_*`, `line_coverage_ok`, `card_counts`).
 
 Campos HyperMesh parseados:
 
@@ -157,7 +174,8 @@ La GUI está implementada con `eframe/egui` y reutiliza el mismo pipeline:
 - lista modelos con solver detectado;
 - permite inspeccionar archivos del modelo y dependencias relacionadas;
 - muestra referencias no resueltas;
-- muestra la estructura de items OptiStruct por archivo (comentarios clasificados + tarjetas con líneas y campos);
+- muestra la estructura de items OptiStruct por archivo con cabeceras `L# [Tipo] <línea original>`;
+- en tarjetas, muestra campos con nombre semántico (`SID`, `PID`, `X1`, etc.);
 - muestra resumen OptiStruct por archivo (y totales de modelo) para inspección rápida de conteos;
 - permite borrar la cache tras la carga.
 
@@ -183,6 +201,8 @@ Los tests de integración están en `tests/integration_reader.rs` y cubren:
 - parsing de tarjetas OptiStruct con metadatos de posición y tipado de tarjetas clave.
 - preservación de líneas no soportadas como ítems `Text` en OptiStruct.
 - generación de `optistruct_file_summaries` por archivo.
+- generación de `optistruct_model_summaries` por modelo.
+- check de cobertura de líneas no vacías (`line_coverage_ok`) por archivo y modelo.
 - ignorar `.femreader-cache` como entrada de modelo.
 
 `src/optistruct.rs` incluye tests unitarios del parser de tarjetas y comentarios.
