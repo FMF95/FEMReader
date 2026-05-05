@@ -43,6 +43,7 @@ struct FemReaderGuiApp {
     status_message: String,
     error_message: Option<String>,
     delete_cache_after_load: bool,
+    highlight_enabled: bool,
     syntax_highlighting: SolverSyntaxHighlighting,
     visual_text_background: HighlightBackgroundChoice,
 }
@@ -115,6 +116,7 @@ impl FemReaderGuiApp {
             status_message: String::new(),
             error_message: None,
             delete_cache_after_load: false,
+            highlight_enabled: true,
             syntax_highlighting: SolverSyntaxHighlighting::load(),
             visual_text_background: HighlightBackgroundChoice::GuiDefault,
         }
@@ -134,7 +136,7 @@ impl FemReaderGuiApp {
         if !input.exists() || !input.is_dir() {
             self.error_message = Some(format!(
                 "El directorio no existe o no es válido: {}",
-                input.display()
+                display_path_for_gui(&input)
             ));
             return;
         }
@@ -174,13 +176,17 @@ impl FemReaderGuiApp {
         content: &ModelContent,
         model: &Model,
         syntax_highlighting: &SolverSyntaxHighlighting,
+        highlight_enabled: bool,
         background: Option<Color32>,
     ) {
         ui.heading(&model.name);
         ui.label(format!("ID: {}", model.id));
         if let Some(root_file) = Self::file_by_id(content, &model.root_file_id) {
             ui.label(format!("Archivo raíz: {}", root_file.name));
-            ui.label(format!("Path raíz: {}", root_file.path.display()));
+            ui.label(format!(
+                "Path raíz: {}",
+                display_path_for_gui(&root_file.path)
+            ));
         } else {
             ui.label(format!("Archivo raíz: {}", model.root_file_id));
         }
@@ -192,7 +198,7 @@ impl FemReaderGuiApp {
             for file_id in &model.file_ids {
                 if let Some(file) = Self::file_by_id(content, file_id) {
                     ui.collapsing(file.name.clone(), |ui| {
-                        ui.label(format!("Path: {}", file.path.display()));
+                        ui.label(format!("Path: {}", display_path_for_gui(&file.path)));
                         ui.label(format!("ID: {}", file.id));
                     });
                 } else {
@@ -220,7 +226,14 @@ impl FemReaderGuiApp {
         });
 
         full_width_collapsing(ui, "Estructura OptiStruct (visual)", |ui| {
-            Self::render_optistruct_structure(ui, content, model, syntax_highlighting, background);
+            Self::render_optistruct_structure(
+                ui,
+                content,
+                model,
+                syntax_highlighting,
+                highlight_enabled,
+                background,
+            );
         });
 
         full_width_collapsing(ui, "Resumen OptiStruct del modelo", |ui| {
@@ -237,11 +250,11 @@ impl FemReaderGuiApp {
         content: &ModelContent,
         model: &Model,
         syntax_highlighting: &SolverSyntaxHighlighting,
+        highlight_enabled: bool,
         background: Option<Color32>,
     ) {
-        let highlighter = syntax_highlighting
-            .for_solver(&model.solver)
-            .or_else(|| syntax_highlighting.for_solver(&SolverKind::OptiStruct));
+        let highlighter =
+            resolve_visual_highlighter(highlight_enabled, syntax_highlighting, &model.solver);
         let model_file_ids: HashSet<&str> = model.file_ids.iter().map(String::as_str).collect();
         let mut grouped = BTreeMap::<(String, String, String), Vec<&OptiStructItem>>::new();
 
@@ -250,17 +263,17 @@ impl FemReaderGuiApp {
                 OptiStructItem::Comment(comment) => (
                     comment.location.file_id.as_str(),
                     comment.location.file_name.clone(),
-                    comment.location.file_path.display().to_string(),
+                    display_path_for_gui(&comment.location.file_path),
                 ),
                 OptiStructItem::Text(text) => (
                     text.location.file_id.as_str(),
                     text.location.file_name.clone(),
-                    text.location.file_path.display().to_string(),
+                    display_path_for_gui(&text.location.file_path),
                 ),
                 OptiStructItem::Card(card) => (
                     card.location.file_id.as_str(),
                     card.location.file_name.clone(),
-                    card.location.file_path.display().to_string(),
+                    display_path_for_gui(&card.location.file_path),
                 ),
             };
 
@@ -288,97 +301,129 @@ impl FemReaderGuiApp {
                 .map(|item| visual_item_prefix(item).chars().count())
                 .max()
                 .unwrap_or(0);
+            let text_column_width = visual_text_column_width_chars(&model.solver, &items);
 
             full_width_collapsing(ui, file_name, |ui| {
                 ui.label(format!("Path: {}", file_path));
                 ui.label(format!("ID: {}", file_id));
-                for item in items {
-                    match item {
-                        OptiStructItem::Comment(comment) => {
-                            let prefix =
-                                aligned_prefix_cell(&visual_item_prefix(item), visual_prefix_width);
-                            let label = build_highlighted_collapsing_label(
-                                ui,
-                                &prefix,
-                                first_visual_line(&comment.text),
-                                highlighter,
-                                background,
-                            );
-                            full_width_collapsing(ui, label, |ui| {
-                                ui.label(format!("ID: {}", comment.id));
-                                render_highlighted_text_block(
+                ui.scope(|ui| {
+                    ui.spacing_mut().item_spacing.y = 0.0;
+                    for item in items {
+                        match item {
+                            OptiStructItem::Comment(comment) => {
+                                let prefix = aligned_prefix_cell(
+                                    &visual_item_prefix(item),
+                                    visual_prefix_width,
+                                );
+                                let label = build_highlighted_collapsing_label(
                                     ui,
-                                    "Texto:",
-                                    &comment.text,
+                                    &prefix,
+                                    &visual_line_with_fixed_width(
+                                        first_visual_line(&comment.text),
+                                        text_column_width,
+                                    ),
                                     highlighter,
                                     background,
                                 );
-                                ui.label(format!("Path: {}", comment.location.file_path.display()));
-                                ui.label(format!("File ID: {}", comment.location.file_id));
-                                ui.label(format!("Ordinal: {}", comment.location.ordinal));
-                                if let OptiStructCommentKind::HyperMeshComment { fields, .. } =
-                                    &comment.kind
-                                {
-                                    render_hypermesh_fields(ui, fields);
-                                }
-                            });
-                        }
-                        OptiStructItem::Text(text) => {
-                            let prefix =
-                                aligned_prefix_cell(&visual_item_prefix(item), visual_prefix_width);
-                            let label = build_highlighted_collapsing_label(
-                                ui,
-                                &prefix,
-                                first_visual_line(&text.text),
-                                highlighter,
-                                background,
-                            );
-                            full_width_collapsing(ui, label, |ui| {
-                                ui.label(format!("ID: {}", text.id));
-                                render_highlighted_text_block(
+                                full_width_collapsing(ui, label, |ui| {
+                                    ui.label(format!("ID: {}", comment.id));
+                                    render_highlighted_text_block(
+                                        ui,
+                                        "Texto:",
+                                        &comment.text,
+                                        highlighter,
+                                        background,
+                                        text_column_width,
+                                    );
+                                    ui.label(format!(
+                                        "Path: {}",
+                                        display_path_for_gui(&comment.location.file_path)
+                                    ));
+                                    ui.label(format!("File ID: {}", comment.location.file_id));
+                                    ui.label(format!("Ordinal: {}", comment.location.ordinal));
+                                    if let OptiStructCommentKind::HyperMeshComment {
+                                        fields, ..
+                                    } = &comment.kind
+                                    {
+                                        render_hypermesh_fields(ui, fields);
+                                    }
+                                });
+                            }
+                            OptiStructItem::Text(text) => {
+                                let prefix = aligned_prefix_cell(
+                                    &visual_item_prefix(item),
+                                    visual_prefix_width,
+                                );
+                                let label = build_highlighted_collapsing_label(
                                     ui,
-                                    "Texto:",
-                                    &text.text,
+                                    &prefix,
+                                    &visual_line_with_fixed_width(
+                                        first_visual_line(&text.text),
+                                        text_column_width,
+                                    ),
                                     highlighter,
                                     background,
                                 );
-                                ui.label(format!("Path: {}", text.location.file_path.display()));
-                                ui.label(format!("File ID: {}", text.location.file_id));
-                                ui.label(format!("Ordinal: {}", text.location.ordinal));
-                            });
-                        }
-                        OptiStructItem::Card(card) => {
-                            let prefix =
-                                aligned_prefix_cell(&visual_item_prefix(item), visual_prefix_width);
-                            let label = build_highlighted_collapsing_label(
-                                ui,
-                                &prefix,
-                                first_visual_line(&card.text),
-                                highlighter,
-                                background,
-                            );
-                            full_width_collapsing(ui, label, |ui| {
-                                ui.label(format!("ID: {}", card.id));
-                                render_highlighted_text_block(
+                                full_width_collapsing(ui, label, |ui| {
+                                    ui.label(format!("ID: {}", text.id));
+                                    render_highlighted_text_block(
+                                        ui,
+                                        "Texto:",
+                                        &text.text,
+                                        highlighter,
+                                        background,
+                                        text_column_width,
+                                    );
+                                    ui.label(format!(
+                                        "Path: {}",
+                                        display_path_for_gui(&text.location.file_path)
+                                    ));
+                                    ui.label(format!("File ID: {}", text.location.file_id));
+                                    ui.label(format!("Ordinal: {}", text.location.ordinal));
+                                });
+                            }
+                            OptiStructItem::Card(card) => {
+                                let prefix = aligned_prefix_cell(
+                                    &visual_item_prefix(item),
+                                    visual_prefix_width,
+                                );
+                                let label = build_highlighted_collapsing_label(
                                     ui,
-                                    "Línea(s) original(es):",
-                                    &card.text,
+                                    &prefix,
+                                    &visual_line_with_fixed_width(
+                                        first_visual_line(&card.text),
+                                        text_column_width,
+                                    ),
                                     highlighter,
                                     background,
                                 );
-                                ui.label(format!("Tarjeta: {}", card.card_name));
-                                ui.label(format!("Ordinal: {}", card.location.ordinal));
-                                ui.label(format!(
-                                    "Formato: {}",
-                                    if card.long_format { "LONG" } else { "SHORT" }
-                                ));
-                                ui.label(format!("Path: {}", card.location.file_path.display()));
-                                ui.label(format!("File ID: {}", card.location.file_id));
-                                render_card_named_fields(ui, card);
-                            });
+                                full_width_collapsing(ui, label, |ui| {
+                                    ui.label(format!("ID: {}", card.id));
+                                    render_highlighted_text_block(
+                                        ui,
+                                        "Línea(s) original(es):",
+                                        &card.text,
+                                        highlighter,
+                                        background,
+                                        text_column_width,
+                                    );
+                                    ui.label(format!("Tarjeta: {}", card.card_name));
+                                    ui.label(format!("Ordinal: {}", card.location.ordinal));
+                                    ui.label(format!(
+                                        "Formato: {}",
+                                        if card.long_format { "LONG" } else { "SHORT" }
+                                    ));
+                                    ui.label(format!(
+                                        "Path: {}",
+                                        display_path_for_gui(&card.location.file_path)
+                                    ));
+                                    ui.label(format!("File ID: {}", card.location.file_id));
+                                    render_card_named_fields(ui, card);
+                                });
+                            }
                         }
                     }
-                }
+                });
             });
         }
     }
@@ -507,7 +552,10 @@ impl FemReaderGuiApp {
 
         for summary in summaries {
             full_width_collapsing(ui, &summary.file_name, |ui| {
-                ui.label(format!("Path: {}", summary.file_path.display()));
+                ui.label(format!(
+                    "Path: {}",
+                    display_path_for_gui(&summary.file_path)
+                ));
                 ui.label(format!("File ID: {}", summary.file_id));
                 ui.label(format!(
                     "Líneas no vacías: {}",
@@ -560,11 +608,15 @@ impl eframe::App for FemReaderGuiApp {
                 let text_edit = ui.text_edit_singleline(&mut self.input_directory);
                 let pressed_enter =
                     text_edit.lost_focus() && ui.input(|input| input.key_pressed(egui::Key::Enter));
+                let trigger_load = ui.button("Cargar").clicked() || pressed_enter;
+                ui.separator();
                 ui.checkbox(
                     &mut self.delete_cache_after_load,
                     "Eliminar cache tras leer (.femreader-cache)",
                 );
-                egui::ComboBox::from_label("Fondo texto visual")
+                ui.checkbox(&mut self.highlight_enabled, "Activar highlighting");
+                ui.label("Fondo texto visual:");
+                egui::ComboBox::from_id_salt("visual_text_background")
                     .selected_text(selected_background_text)
                     .show_ui(ui, |ui| {
                         for choice in HighlightBackgroundChoice::all() {
@@ -576,7 +628,7 @@ impl eframe::App for FemReaderGuiApp {
                         }
                     });
 
-                if ui.button("Cargar").clicked() || pressed_enter {
+                if trigger_load {
                     self.load_content();
                 }
             });
@@ -602,7 +654,10 @@ impl eframe::App for FemReaderGuiApp {
                 .width_range(220.0..=420.0)
                 .show_inside(ui, |ui| {
                     ui.heading("Resumen");
-                    ui.label(format!("Root: {}", content.root_directory.display()));
+                    ui.label(format!(
+                        "Root: {}",
+                        display_path_for_gui(&content.root_directory)
+                    ));
                     ui.label(format!("Directorios: {}", content.directories.len()));
                     ui.label(format!("Archivos: {}", content.files.len()));
                     let model_files = content
@@ -652,7 +707,10 @@ impl eframe::App for FemReaderGuiApp {
                                 for file in &content.files {
                                     if file.category == FileCategory::NonModel {
                                         ui.collapsing(file.name.clone(), |ui| {
-                                            ui.label(format!("Path: {}", file.path.display()));
+                                            ui.label(format!(
+                                                "Path: {}",
+                                                display_path_for_gui(&file.path)
+                                            ));
                                             ui.label(format!("ID: {}", file.id));
                                         });
                                     }
@@ -686,6 +744,7 @@ impl eframe::App for FemReaderGuiApp {
                                     content,
                                     model,
                                     &self.syntax_highlighting,
+                                    self.highlight_enabled,
                                     visual_background,
                                 );
                             } else {
@@ -932,19 +991,47 @@ fn locate_highlighting_file(file_name: &str) -> Option<PathBuf> {
     candidates.into_iter().find(|path| path.is_file())
 }
 
+fn resolve_visual_highlighter<'a>(
+    highlight_enabled: bool,
+    syntax_highlighting: &'a SolverSyntaxHighlighting,
+    solver: &SolverKind,
+) -> Option<&'a SyntaxHighlighter> {
+    if !highlight_enabled {
+        return None;
+    }
+    syntax_highlighting
+        .for_solver(solver)
+        .or_else(|| syntax_highlighting.for_solver(&SolverKind::OptiStruct))
+}
+
 fn render_highlighted_text_block(
     ui: &mut egui::Ui,
     title: &str,
     text: &str,
     highlighter: Option<&SyntaxHighlighter>,
     background: Option<Color32>,
+    text_column_width: usize,
 ) {
     ui.label(title);
-    for line in text.lines() {
-        render_highlighted_line(ui, line, highlighter, background);
-    }
-    if text.is_empty() || text.ends_with('\n') {
-        render_highlighted_line(ui, "", highlighter, background);
+    let lines = visual_lines_for_block(text, text_column_width);
+    if let Some(background_color) = background {
+        egui::Frame::NONE
+            .fill(background_color)
+            .inner_margin(egui::Margin::same(0))
+            .outer_margin(egui::Margin::same(0))
+            .show(ui, |ui| {
+                ui.spacing_mut().item_spacing.y = 0.0;
+                for line in lines {
+                    render_highlighted_line(ui, &line, highlighter, None);
+                }
+            });
+    } else {
+        ui.scope(|ui| {
+            ui.spacing_mut().item_spacing.y = 0.0;
+            for line in lines {
+                render_highlighted_line(ui, &line, highlighter, background);
+            }
+        });
     }
 }
 
@@ -956,6 +1043,7 @@ fn build_highlighted_collapsing_label(
     background: Option<Color32>,
 ) -> LayoutJob {
     let default_color = ui.visuals().text_color();
+    let token_default_color = default_text_color_for_highlighting(highlighter, default_color);
     let background_color = background.unwrap_or(Color32::TRANSPARENT);
     let mut job = LayoutJob::default();
     job.append(
@@ -974,7 +1062,7 @@ fn build_highlighted_collapsing_label(
             &mut job,
             line,
             highlighter,
-            default_color,
+            token_default_color,
             background_color,
         );
     } else {
@@ -1000,6 +1088,7 @@ fn render_highlighted_line(
     background: Option<Color32>,
 ) {
     let default_color = ui.visuals().text_color();
+    let token_default_color = default_text_color_for_highlighting(highlighter, default_color);
     let background_color = background.unwrap_or(Color32::TRANSPARENT);
     if let Some(highlighter) = highlighter {
         let mut job = LayoutJob::default();
@@ -1007,7 +1096,7 @@ fn render_highlighted_line(
             &mut job,
             line,
             highlighter,
-            default_color,
+            token_default_color,
             background_color,
         );
         ui.label(job);
@@ -1060,6 +1149,85 @@ fn to_color32(color: RgbColor) -> Color32 {
     Color32::from_rgb(color.r, color.g, color.b)
 }
 
+fn default_text_color_for_highlighting(
+    highlighter: Option<&SyntaxHighlighter>,
+    gui_default_color: Color32,
+) -> Color32 {
+    if highlighter.is_some() {
+        Color32::BLACK
+    } else {
+        gui_default_color
+    }
+}
+
+fn display_path_for_gui(path: &Path) -> String {
+    strip_windows_extended_path_prefix(&path.display().to_string())
+}
+
+fn strip_windows_extended_path_prefix(path: &str) -> String {
+    if let Some(rest) = path.strip_prefix(r"\\?\UNC\") {
+        return format!(r"\\{}", rest);
+    }
+    if let Some(rest) = path.strip_prefix(r"\\?\") {
+        return rest.to_string();
+    }
+    path.to_string()
+}
+
+fn visual_text_column_width_chars(solver: &SolverKind, items: &[&OptiStructItem]) -> usize {
+    let max_line_len = items
+        .iter()
+        .flat_map(|item| item_text(item).lines())
+        .map(|line| line.chars().count())
+        .max()
+        .unwrap_or(0);
+    text_column_width_from_max_line(solver, max_line_len)
+}
+
+fn text_column_width_from_max_line(solver: &SolverKind, max_line_len: usize) -> usize {
+    solver_min_text_width_chars(solver).max(max_line_len)
+}
+
+fn solver_min_text_width_chars(solver: &SolverKind) -> usize {
+    match solver {
+        SolverKind::OptiStruct | SolverKind::Nastran | SolverKind::Unknown => 80,
+        SolverKind::Abaqus => 0,
+    }
+}
+
+fn item_text(item: &OptiStructItem) -> &str {
+    match item {
+        OptiStructItem::Comment(comment) => &comment.text,
+        OptiStructItem::Text(text) => &text.text,
+        OptiStructItem::Card(card) => &card.text,
+    }
+}
+
+fn visual_lines_for_block(text: &str, text_column_width: usize) -> Vec<String> {
+    let mut lines = text
+        .lines()
+        .map(|line| visual_line_with_fixed_width(line, text_column_width))
+        .collect::<Vec<_>>();
+    if text.is_empty() || text.ends_with('\n') {
+        lines.push(visual_line_with_fixed_width("", text_column_width));
+    }
+    if lines.is_empty() {
+        lines.push(visual_line_with_fixed_width("", text_column_width));
+    }
+    lines
+}
+
+fn visual_line_with_fixed_width(line: &str, text_column_width: usize) -> String {
+    let line_chars = line.chars().count();
+    if line_chars >= text_column_width {
+        return line.to_string();
+    }
+    let mut value = String::with_capacity(text_column_width);
+    value.push_str(line);
+    value.push_str(&" ".repeat(text_column_width - line_chars));
+    value
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -1092,6 +1260,105 @@ mod tests {
         assert_eq!(
             HighlightBackgroundChoice::Gray.color(),
             Some(Color32::from_rgb(0xA8, 0xA8, 0xA8))
+        );
+    }
+
+    #[test]
+    fn solver_min_text_width_for_nastran_and_optistruct_is_80() {
+        assert_eq!(solver_min_text_width_chars(&SolverKind::OptiStruct), 80);
+        assert_eq!(solver_min_text_width_chars(&SolverKind::Nastran), 80);
+        assert_eq!(solver_min_text_width_chars(&SolverKind::Unknown), 80);
+        assert_eq!(solver_min_text_width_chars(&SolverKind::Abaqus), 0);
+    }
+
+    #[test]
+    fn text_column_width_respects_solver_minimum_and_long_lines() {
+        assert_eq!(
+            text_column_width_from_max_line(&SolverKind::OptiStruct, 12),
+            80
+        );
+        assert_eq!(
+            text_column_width_from_max_line(&SolverKind::Nastran, 95),
+            95
+        );
+        assert_eq!(text_column_width_from_max_line(&SolverKind::Abaqus, 37), 37);
+    }
+
+    #[test]
+    fn visual_line_with_fixed_width_pads_to_target_without_truncation() {
+        assert_eq!(visual_line_with_fixed_width("GRID", 8), "GRID    ");
+        assert_eq!(visual_line_with_fixed_width("BEGIN BULK", 4), "BEGIN BULK");
+    }
+
+    #[test]
+    fn resolve_visual_highlighter_honors_enabled_flag() {
+        let xml = r#"
+<NotepadPlus>
+  <UserLang name="X" ext="fem" udlVersion="2.1">
+    <Settings><Global caseIgnored="yes" /></Settings>
+    <KeywordLists>
+      <Keywords name="Comments">00$$</Keywords>
+      <Keywords name="Keywords1">GRID</Keywords>
+    </KeywordLists>
+    <Styles>
+      <WordsStyle name="DEFAULT" fgColor="000000" />
+      <WordsStyle name="LINE COMMENTS" fgColor="008000" />
+      <WordsStyle name="KEYWORDS1" fgColor="0000FF" />
+    </Styles>
+  </UserLang>
+</NotepadPlus>
+"#;
+        let highlighter =
+            SyntaxHighlighter::from_notepadpp_xml(xml).expect("test highlighter xml should parse");
+        let syntax = SolverSyntaxHighlighting {
+            optistruct: Some(highlighter),
+            nastran: None,
+            abaqus: None,
+        };
+
+        assert!(resolve_visual_highlighter(true, &syntax, &SolverKind::OptiStruct).is_some());
+        assert!(resolve_visual_highlighter(false, &syntax, &SolverKind::OptiStruct).is_none());
+    }
+
+    #[test]
+    fn default_text_color_is_black_when_highlighting_is_active() {
+        let xml = r#"
+<NotepadPlus>
+  <UserLang name="X" ext="fem" udlVersion="2.1">
+    <Settings><Global caseIgnored="yes" /></Settings>
+    <KeywordLists><Keywords name="Keywords1">GRID</Keywords></KeywordLists>
+    <Styles>
+      <WordsStyle name="DEFAULT" fgColor="000000" />
+      <WordsStyle name="KEYWORDS1" fgColor="0000FF" />
+    </Styles>
+  </UserLang>
+</NotepadPlus>
+"#;
+        let highlighter =
+            SyntaxHighlighter::from_notepadpp_xml(xml).expect("test highlighter xml should parse");
+        assert_eq!(
+            default_text_color_for_highlighting(Some(&highlighter), Color32::WHITE),
+            Color32::BLACK
+        );
+        assert_eq!(
+            default_text_color_for_highlighting(None, Color32::WHITE),
+            Color32::WHITE
+        );
+    }
+
+    #[test]
+    fn strip_windows_extended_path_prefix_removes_verbatim_prefix() {
+        assert_eq!(
+            strip_windows_extended_path_prefix(r"\\?\C:\models\main.fem"),
+            r"C:\models\main.fem"
+        );
+        assert_eq!(
+            strip_windows_extended_path_prefix(r"\\?\UNC\server\share\main.fem"),
+            r"\\server\share\main.fem"
+        );
+        assert_eq!(
+            strip_windows_extended_path_prefix(r"C:\models\main.fem"),
+            r"C:\models\main.fem"
         );
     }
 }

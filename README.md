@@ -18,6 +18,10 @@ Lector de modelos FEM en Rust, orientado a escaneo rápido, resolución de depen
 - **Resaltado de sintaxis en GUI (estilo Notepad++)** para las líneas mostradas en la estructura visual, leyendo definiciones XML desde `highlighting/`.
 - **Alineación visual por columnas en estructura GUI**: cabecera `L# [Tipo]` alineada y texto literal arrancando siempre en la misma columna para facilitar lectura.
 - **Selector de fondo para texto resaltado** en la barra superior de GUI (`Predeterminado`, `#FFFFFF`, `#FFF8DC`, `#A8A8A8`), aplicado solo al bloque literal con highlighting.
+- **Bloque visual homogéneo en segunda columna**: el fondo del texto literal se pinta sin saltos entre líneas y con borde derecho alineado; en `NASTRAN/OptiStruct` se usa ancho mínimo de 80 caracteres.
+- **Activación/desactivación de highlighting en GUI** mediante checkbox en la barra superior.
+- **Texto sin token específico en modo highlighting**: se muestra en negro para mejorar contraste/lectura.
+- **Rutas en GUI normalizadas en Windows**: se oculta el prefijo verbatim `\\?\` en la visualización de paths.
 - **IDs únicos determinísticos** para entidades del modelo (directorios, archivos, dependencias, modelos e ítems OptiStruct), en formato hash estable sin prefijos.
 - **Campos de nombre legible**: `name` para archivos/directorios y `file_name` para ubicaciones de ítems OptiStruct.
 - **Identificación automática de solver por directorio**:
@@ -80,6 +84,8 @@ En la GUI puedes:
 - Ver la estructura visual de lectura OptiStruct con encabezados `L# [Tipo] <línea original>`.
 - Ver las líneas de `Comment`, `Text` y `Card` con resaltado de sintaxis basado en XML de Notepad++ (si los ficheros están disponibles en `highlighting/`).
 - Cambiar en la barra superior el fondo del texto literal resaltado en el visualizador (`Predeterminado`, blanco, `FFF8DC`, `A8A8A8`).
+- Activar o desactivar el highlighting desde la barra superior sin recargar los datos.
+- Ver rutas de archivo en formato legible (sin prefijo `\\?\` cuando aplique en Windows).
 - Ver en tarjetas los campos por nombre (`SID`, `PID`, `X1`, etc.) en lugar de etiquetas `F1/F2/...`.
 - Ver un resumen OptiStruct por archivo y totales de resumen por modelo (incluyendo check de cobertura de líneas).
 - Activar la opción para eliminar `.femreader-cache` tras cada carga.
