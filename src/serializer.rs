@@ -26,8 +26,7 @@ impl Serializer for JsonSerializer {
 
 // Contract marker used by tests to force an explicit schema-version review when JSON shape changes.
 #[cfg(test)]
-const SCHEMA_CONTRACT_MARKER: &str =
-    "card-text-key:text|begin-bulk:no-fields|enddata:no-fields|model-summaries:yes|items-array:ordered";
+const SCHEMA_CONTRACT_MARKER: &str = "card-text-key:text|begin-bulk:no-fields|enddata:no-fields|model-summaries:yes|items-array:ordered";
 
 #[cfg(test)]
 fn schema_contract_marker() -> &'static str {

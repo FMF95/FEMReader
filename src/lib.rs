@@ -1,6 +1,7 @@
 pub mod assembler;
 pub mod cache;
 pub mod dependency;
+pub mod highlighting;
 pub mod ids;
 pub mod model;
 pub mod optistruct;

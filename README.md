@@ -15,6 +15,7 @@ Lector de modelos FEM en Rust, orientado a escaneo rápido, resolución de depen
 - **Tarjetas delimitadoras sin campos**: `BEGIN BULK` y `ENDDATA` se identifican como tarjetas propias con `fields: []`.
 - **Comentarios OptiStruct clasificados** como `Comment` o `HyperMesh Comment` (`$HMNAME`, `$HWCOLOR`, `$HMMOVE`, `$HMDPRP`).
 - **Resúmenes OptiStruct por archivo y por modelo**: totales de tarjetas/comentarios/texto + conteo por tarjeta, con check de cobertura de líneas no vacías.
+- **Resaltado de sintaxis en GUI (estilo Notepad++)** para las líneas mostradas en la estructura visual, leyendo definiciones XML desde `highlighting/`.
 - **IDs únicos determinísticos** para entidades del modelo (directorios, archivos, dependencias, modelos e ítems OptiStruct), en formato hash estable sin prefijos.
 - **Campos de nombre legible**: `name` para archivos/directorios y `file_name` para ubicaciones de ítems OptiStruct.
 - **Identificación automática de solver por directorio**:
@@ -75,6 +76,7 @@ En la GUI puedes:
 - Seleccionar cada modelo y revisar sus archivos, solver detectado y relaciones de dependencia.
 - Ver el listado de archivos `NonModel` (escaneados pero fuera del grafo de modelos FEM).
 - Ver la estructura visual de lectura OptiStruct con encabezados `L# [Tipo] <línea original>`.
+- Ver las líneas de `Comment`, `Text` y `Card` con resaltado de sintaxis basado en XML de Notepad++ (si los ficheros están disponibles en `highlighting/`).
 - Ver en tarjetas los campos por nombre (`SID`, `PID`, `X1`, etc.) en lugar de etiquetas `F1/F2/...`.
 - Ver un resumen OptiStruct por archivo y totales de resumen por modelo (incluyendo check de cobertura de líneas).
 - Activar la opción para eliminar `.femreader-cache` tras cada carga.
@@ -103,6 +105,10 @@ Notas:
 - En `Card`, la línea original se serializa en `text` (igual criterio que `Comment`/`Text`).
 - JSON no admite comentarios nativos; se añade `json_guide` como ayuda de lectura de secciones/plantillas de campos.
 - `schema_version` se toma desde una constante única (`model::SCHEMA_VERSION`) y se valida con tests de guardia de contrato.
+- Mapeo de highlighting por solver en GUI:
+  - `OptiStruct` -> `highlighting/NASTRAN_mod.xml`
+  - `NASTRAN` -> `highlighting/NASTRAN.xml`
+  - `ABAQUS` -> `highlighting/ABAQUS_6.13.xml`
 
 ## Desarrollo y arquitectura
 

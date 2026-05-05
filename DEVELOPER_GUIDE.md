@@ -27,6 +27,7 @@ La meta es poder ampliar reglas de parsing/solver y salidas sin duplicar lógica
 - `cache.rs`: cache incremental por path, tamaño y fecha de modificación.
 - `pipeline.rs`: orquestación scanner -> dependency -> assembler -> serializer.
 - `model.rs`: entidades de dominio y transporte (`ModelContent`, `Model`, `FileNode`, etc.).
+- `highlighting.rs`: parser ligero de XML UDL (Notepad++) y clasificación de tokens para resaltado en GUI.
 
 ## 3. Flujo end-to-end
 
@@ -175,6 +176,7 @@ La GUI está implementada con `eframe/egui` y reutiliza el mismo pipeline:
 - permite inspeccionar archivos del modelo y dependencias relacionadas;
 - muestra referencias no resueltas;
 - muestra la estructura de items OptiStruct por archivo con cabeceras `L# [Tipo] <línea original>`;
+- aplica resaltado de sintaxis a las líneas mostradas en `Comment`, `Text` y `Card` usando XML de `highlighting/`;
 - en tarjetas, muestra campos con nombre semántico (`SID`, `PID`, `X1`, etc.);
 - muestra resumen OptiStruct por archivo (y totales de modelo) para inspección rápida de conteos;
 - permite borrar la cache tras la carga.
@@ -206,6 +208,7 @@ Los tests de integración están en `tests/integration_reader.rs` y cubren:
 - ignorar `.femreader-cache` como entrada de modelo.
 
 `src/optistruct.rs` incluye tests unitarios del parser de tarjetas y comentarios.
+`src/highlighting.rs` incluye tests unitarios de lectura XML y clasificación (`keyword`, `operator`, `comment`).
 
 Ejecutar:
 
