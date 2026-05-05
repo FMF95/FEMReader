@@ -177,6 +177,8 @@ La GUI está implementada con `eframe/egui` y reutiliza el mismo pipeline:
 - muestra referencias no resueltas;
 - muestra la estructura de items OptiStruct por archivo con cabeceras `L# [Tipo] <línea original>`;
 - aplica resaltado de sintaxis a las líneas mostradas en `Comment`, `Text` y `Card` usando XML de `highlighting/`;
+- alinea visualmente `L# [Tipo]` y texto literal en una disposición tipo dos columnas (cabecera alineada + contenido literal);
+- permite seleccionar el fondo del bloque literal resaltado desde la barra superior (`Predeterminado`, `#FFFFFF`, `#FFF8DC`, `#A8A8A8`);
 - en tarjetas, muestra campos con nombre semántico (`SID`, `PID`, `X1`, etc.);
 - muestra resumen OptiStruct por archivo (y totales de modelo) para inspección rápida de conteos;
 - permite borrar la cache tras la carga.
@@ -209,6 +211,7 @@ Los tests de integración están en `tests/integration_reader.rs` y cubren:
 
 `src/optistruct.rs` incluye tests unitarios del parser de tarjetas y comentarios.
 `src/highlighting.rs` incluye tests unitarios de lectura XML y clasificación (`keyword`, `operator`, `comment`).
+`src/bin/femreader_gui.rs` incluye tests unitarios de alineación de cabecera visual y mapeo de color de fondo del highlighting.
 
 Ejecutar:
 

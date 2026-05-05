@@ -44,6 +44,7 @@ struct FemReaderGuiApp {
     error_message: Option<String>,
     delete_cache_after_load: bool,
     syntax_highlighting: SolverSyntaxHighlighting,
+    visual_text_background: HighlightBackgroundChoice,
 }
 
 #[derive(Default)]
@@ -51,6 +52,39 @@ struct SolverSyntaxHighlighting {
     optistruct: Option<SyntaxHighlighter>,
     nastran: Option<SyntaxHighlighter>,
     abaqus: Option<SyntaxHighlighter>,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+enum HighlightBackgroundChoice {
+    #[default]
+    GuiDefault,
+    White,
+    Cornsilk,
+    Gray,
+}
+
+impl HighlightBackgroundChoice {
+    const fn all() -> [Self; 4] {
+        [Self::GuiDefault, Self::White, Self::Cornsilk, Self::Gray]
+    }
+
+    const fn label(self) -> &'static str {
+        match self {
+            Self::GuiDefault => "Predeterminado GUI",
+            Self::White => "Blanco (#FFFFFF)",
+            Self::Cornsilk => "Cornsilk (#FFF8DC)",
+            Self::Gray => "Gris (#A8A8A8)",
+        }
+    }
+
+    const fn color(self) -> Option<Color32> {
+        match self {
+            Self::GuiDefault => None,
+            Self::White => Some(Color32::from_rgb(0xFF, 0xFF, 0xFF)),
+            Self::Cornsilk => Some(Color32::from_rgb(0xFF, 0xF8, 0xDC)),
+            Self::Gray => Some(Color32::from_rgb(0xA8, 0xA8, 0xA8)),
+        }
+    }
 }
 
 impl SolverSyntaxHighlighting {
@@ -82,6 +116,7 @@ impl FemReaderGuiApp {
             error_message: None,
             delete_cache_after_load: false,
             syntax_highlighting: SolverSyntaxHighlighting::load(),
+            visual_text_background: HighlightBackgroundChoice::GuiDefault,
         }
     }
 
@@ -139,6 +174,7 @@ impl FemReaderGuiApp {
         content: &ModelContent,
         model: &Model,
         syntax_highlighting: &SolverSyntaxHighlighting,
+        background: Option<Color32>,
     ) {
         ui.heading(&model.name);
         ui.label(format!("ID: {}", model.id));
@@ -184,7 +220,7 @@ impl FemReaderGuiApp {
         });
 
         full_width_collapsing(ui, "Estructura OptiStruct (visual)", |ui| {
-            Self::render_optistruct_structure(ui, content, model, syntax_highlighting);
+            Self::render_optistruct_structure(ui, content, model, syntax_highlighting, background);
         });
 
         full_width_collapsing(ui, "Resumen OptiStruct del modelo", |ui| {
@@ -201,6 +237,7 @@ impl FemReaderGuiApp {
         content: &ModelContent,
         model: &Model,
         syntax_highlighting: &SolverSyntaxHighlighting,
+        background: Option<Color32>,
     ) {
         let highlighter = syntax_highlighting
             .for_solver(&model.solver)
@@ -246,6 +283,11 @@ impl FemReaderGuiApp {
                 OptiStructItem::Text(text) => text.location.ordinal,
                 OptiStructItem::Card(card) => card.location.ordinal,
             });
+            let visual_prefix_width = items
+                .iter()
+                .map(|item| visual_item_prefix(item).chars().count())
+                .max()
+                .unwrap_or(0);
 
             full_width_collapsing(ui, file_name, |ui| {
                 ui.label(format!("Path: {}", file_path));
@@ -253,11 +295,14 @@ impl FemReaderGuiApp {
                 for item in items {
                     match item {
                         OptiStructItem::Comment(comment) => {
+                            let prefix =
+                                aligned_prefix_cell(&visual_item_prefix(item), visual_prefix_width);
                             let label = build_highlighted_collapsing_label(
                                 ui,
-                                &format!("L{} [Comment] ", comment.location.start_line),
+                                &prefix,
                                 first_visual_line(&comment.text),
                                 highlighter,
+                                background,
                             );
                             full_width_collapsing(ui, label, |ui| {
                                 ui.label(format!("ID: {}", comment.id));
@@ -266,6 +311,7 @@ impl FemReaderGuiApp {
                                     "Texto:",
                                     &comment.text,
                                     highlighter,
+                                    background,
                                 );
                                 ui.label(format!("Path: {}", comment.location.file_path.display()));
                                 ui.label(format!("File ID: {}", comment.location.file_id));
@@ -278,11 +324,14 @@ impl FemReaderGuiApp {
                             });
                         }
                         OptiStructItem::Text(text) => {
+                            let prefix =
+                                aligned_prefix_cell(&visual_item_prefix(item), visual_prefix_width);
                             let label = build_highlighted_collapsing_label(
                                 ui,
-                                &format!("L{} [Text] ", text.location.start_line),
+                                &prefix,
                                 first_visual_line(&text.text),
                                 highlighter,
+                                background,
                             );
                             full_width_collapsing(ui, label, |ui| {
                                 ui.label(format!("ID: {}", text.id));
@@ -291,6 +340,7 @@ impl FemReaderGuiApp {
                                     "Texto:",
                                     &text.text,
                                     highlighter,
+                                    background,
                                 );
                                 ui.label(format!("Path: {}", text.location.file_path.display()));
                                 ui.label(format!("File ID: {}", text.location.file_id));
@@ -298,16 +348,14 @@ impl FemReaderGuiApp {
                             });
                         }
                         OptiStructItem::Card(card) => {
-                            let line_label = if card.location.start_line == card.location.end_line {
-                                format!("L{}", card.location.start_line)
-                            } else {
-                                format!("L{}-L{}", card.location.start_line, card.location.end_line)
-                            };
+                            let prefix =
+                                aligned_prefix_cell(&visual_item_prefix(item), visual_prefix_width);
                             let label = build_highlighted_collapsing_label(
                                 ui,
-                                &format!("{line_label} [Card] "),
+                                &prefix,
                                 first_visual_line(&card.text),
                                 highlighter,
+                                background,
                             );
                             full_width_collapsing(ui, label, |ui| {
                                 ui.label(format!("ID: {}", card.id));
@@ -316,6 +364,7 @@ impl FemReaderGuiApp {
                                     "Línea(s) original(es):",
                                     &card.text,
                                     highlighter,
+                                    background,
                                 );
                                 ui.label(format!("Tarjeta: {}", card.card_name));
                                 ui.label(format!("Ordinal: {}", card.location.ordinal));
@@ -504,6 +553,7 @@ impl FemReaderGuiApp {
 
 impl eframe::App for FemReaderGuiApp {
     fn update(&mut self, ctx: &egui::Context, _: &mut eframe::Frame) {
+        let selected_background_text = self.visual_text_background.label();
         egui::TopBottomPanel::top("toolbar").show(ctx, |ui| {
             ui.horizontal(|ui| {
                 ui.label("Directorio de modelos:");
@@ -514,6 +564,17 @@ impl eframe::App for FemReaderGuiApp {
                     &mut self.delete_cache_after_load,
                     "Eliminar cache tras leer (.femreader-cache)",
                 );
+                egui::ComboBox::from_label("Fondo texto visual")
+                    .selected_text(selected_background_text)
+                    .show_ui(ui, |ui| {
+                        for choice in HighlightBackgroundChoice::all() {
+                            ui.selectable_value(
+                                &mut self.visual_text_background,
+                                choice,
+                                choice.label(),
+                            );
+                        }
+                    });
 
                 if ui.button("Cargar").clicked() || pressed_enter {
                     self.load_content();
@@ -619,11 +680,13 @@ impl eframe::App for FemReaderGuiApp {
                     .show(ui, |ui| {
                         if let Some(model_index) = selected_model_index {
                             if let Some(model) = content.models.get(model_index) {
+                                let visual_background = self.visual_text_background.color();
                                 Self::render_model_details(
                                     ui,
                                     content,
                                     model,
                                     &self.syntax_highlighting,
+                                    visual_background,
                                 );
                             } else {
                                 ui.label("No hay modelo seleccionado.");
@@ -764,6 +827,27 @@ fn first_visual_line(text: &str) -> &str {
     text.lines().next().unwrap_or("")
 }
 
+fn visual_item_prefix(item: &OptiStructItem) -> String {
+    match item {
+        OptiStructItem::Comment(comment) => format!("L{} [Comment]", comment.location.start_line),
+        OptiStructItem::Text(text) => format!("L{} [Text]", text.location.start_line),
+        OptiStructItem::Card(card) => {
+            if card.location.start_line == card.location.end_line {
+                format!("L{} [Card]", card.location.start_line)
+            } else {
+                format!(
+                    "L{}-L{} [Card]",
+                    card.location.start_line, card.location.end_line
+                )
+            }
+        }
+    }
+}
+
+fn aligned_prefix_cell(prefix: &str, width: usize) -> String {
+    format!("{prefix:<width$}  ")
+}
+
 fn render_card_named_fields(ui: &mut egui::Ui, card: &femreader::model::OptiStructCardItem) {
     ui.label("Campos:");
     if card.fields.is_empty() {
@@ -853,13 +937,14 @@ fn render_highlighted_text_block(
     title: &str,
     text: &str,
     highlighter: Option<&SyntaxHighlighter>,
+    background: Option<Color32>,
 ) {
     ui.label(title);
     for line in text.lines() {
-        render_highlighted_line(ui, line, highlighter);
+        render_highlighted_line(ui, line, highlighter, background);
     }
     if text.is_empty() || text.ends_with('\n') {
-        render_highlighted_line(ui, "", highlighter);
+        render_highlighted_line(ui, "", highlighter, background);
     }
 }
 
@@ -868,8 +953,10 @@ fn build_highlighted_collapsing_label(
     prefix: &str,
     line: &str,
     highlighter: Option<&SyntaxHighlighter>,
+    background: Option<Color32>,
 ) -> LayoutJob {
     let default_color = ui.visuals().text_color();
+    let background_color = background.unwrap_or(Color32::TRANSPARENT);
     let mut job = LayoutJob::default();
     job.append(
         prefix,
@@ -877,12 +964,19 @@ fn build_highlighted_collapsing_label(
         TextFormat {
             font_id: FontId::new(13.0, FontFamily::Monospace),
             color: default_color,
+            background: Color32::TRANSPARENT,
             ..Default::default()
         },
     );
 
     if let Some(highlighter) = highlighter {
-        append_highlighted_line_to_job(&mut job, line, highlighter, default_color);
+        append_highlighted_line_to_job(
+            &mut job,
+            line,
+            highlighter,
+            default_color,
+            background_color,
+        );
     } else {
         job.append(
             line,
@@ -890,6 +984,7 @@ fn build_highlighted_collapsing_label(
             TextFormat {
                 font_id: FontId::new(13.0, FontFamily::Monospace),
                 color: default_color,
+                background: background_color,
                 ..Default::default()
             },
         );
@@ -898,14 +993,30 @@ fn build_highlighted_collapsing_label(
     job
 }
 
-fn render_highlighted_line(ui: &mut egui::Ui, line: &str, highlighter: Option<&SyntaxHighlighter>) {
+fn render_highlighted_line(
+    ui: &mut egui::Ui,
+    line: &str,
+    highlighter: Option<&SyntaxHighlighter>,
+    background: Option<Color32>,
+) {
     let default_color = ui.visuals().text_color();
+    let background_color = background.unwrap_or(Color32::TRANSPARENT);
     if let Some(highlighter) = highlighter {
         let mut job = LayoutJob::default();
-        append_highlighted_line_to_job(&mut job, line, highlighter, default_color);
+        append_highlighted_line_to_job(
+            &mut job,
+            line,
+            highlighter,
+            default_color,
+            background_color,
+        );
         ui.label(job);
     } else {
-        ui.label(RichText::new(line).monospace());
+        let mut rich = RichText::new(line).monospace();
+        if background.is_some() {
+            rich = rich.background_color(background_color);
+        }
+        ui.label(rich);
     }
 }
 
@@ -914,6 +1025,7 @@ fn append_highlighted_line_to_job(
     line: &str,
     highlighter: &SyntaxHighlighter,
     default_color: Color32,
+    background_color: Color32,
 ) {
     for span in highlighter.highlight_line(line) {
         let color = match span.kind {
@@ -937,6 +1049,7 @@ fn append_highlighted_line_to_job(
             TextFormat {
                 font_id: FontId::new(13.0, FontFamily::Monospace),
                 color,
+                background: background_color,
                 ..Default::default()
             },
         );
@@ -945,4 +1058,40 @@ fn append_highlighted_line_to_job(
 
 fn to_color32(color: RgbColor) -> Color32 {
     Color32::from_rgb(color.r, color.g, color.b)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn aligned_prefix_cell_pads_prefix_to_fixed_width() {
+        let padded = aligned_prefix_cell("L12 [Card]", 16);
+        assert_eq!(padded, "L12 [Card]        ");
+        assert_eq!(padded.chars().count(), 18);
+    }
+
+    #[test]
+    fn aligned_prefix_cell_keeps_long_prefix_without_truncation() {
+        let prefix = "L120-L130 [Card]";
+        let padded = aligned_prefix_cell(prefix, 8);
+        assert_eq!(padded, "L120-L130 [Card]  ");
+    }
+
+    #[test]
+    fn highlight_background_choice_maps_expected_colors() {
+        assert_eq!(HighlightBackgroundChoice::GuiDefault.color(), None);
+        assert_eq!(
+            HighlightBackgroundChoice::White.color(),
+            Some(Color32::from_rgb(0xFF, 0xFF, 0xFF))
+        );
+        assert_eq!(
+            HighlightBackgroundChoice::Cornsilk.color(),
+            Some(Color32::from_rgb(0xFF, 0xF8, 0xDC))
+        );
+        assert_eq!(
+            HighlightBackgroundChoice::Gray.color(),
+            Some(Color32::from_rgb(0xA8, 0xA8, 0xA8))
+        );
+    }
 }
