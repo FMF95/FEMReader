@@ -159,6 +159,7 @@ Notas de parsing HyperMesh:
 Guía específica para extender tarjetas:
 
 - `OPTISTRUCT_CARDS_GUIDE.md`
+- `DOTNET_INTEGRATION.md` (integración operativa con apps .NET)
 
 Para añadir un nuevo solver:
 
@@ -183,6 +184,7 @@ La GUI está implementada con `eframe/egui` y reutiliza el mismo pipeline:
 - en `NASTRAN/OptiStruct` el bloque literal usa ancho mínimo de 80 caracteres para mantener borde derecho alineado y fondo homogéneo entre líneas;
 - cuando el highlighting está activo, el texto sin token específico se dibuja en negro para legibilidad;
 - normaliza paths mostrados en GUI eliminando prefijo verbatim de Windows (`\\?\`) para evitar ruido visual;
+- en la barra superior, `Cargar` aparece justo tras la ruta y la opción de borrar cache está activada por defecto;
 - en tarjetas, muestra campos con nombre semántico (`SID`, `PID`, `X1`, etc.);
 - muestra resumen OptiStruct por archivo (y totales de modelo) para inspección rápida de conteos;
 - permite borrar la cache tras la carga.

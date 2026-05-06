@@ -88,7 +88,7 @@ En la GUI puedes:
 - Ver rutas de archivo en formato legible (sin prefijo `\\?\` cuando aplique en Windows).
 - Ver en tarjetas los campos por nombre (`SID`, `PID`, `X1`, etc.) en lugar de etiquetas `F1/F2/...`.
 - Ver un resumen OptiStruct por archivo y totales de resumen por modelo (incluyendo check de cobertura de líneas).
-- Activar la opción para eliminar `.femreader-cache` tras cada carga.
+- La opción para eliminar `.femreader-cache` tras cada carga está activada por defecto (puedes desmarcarla).
 
 ## Contrato de salida JSON
 
@@ -125,6 +125,7 @@ Consulta la guía técnica para desarrolladores:
 
 - `DEVELOPER_GUIDE.md`
 - `OPTISTRUCT_CARDS_GUIDE.md` (cómo añadir nuevas tarjetas al parser de OptiStruct)
+- `DOTNET_INTEGRATION.md` (cómo integrar y llamar FEMReader desde una app .NET)
 
 ## Tests
 

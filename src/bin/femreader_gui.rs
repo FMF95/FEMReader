@@ -115,7 +115,7 @@ impl FemReaderGuiApp {
             selected_model_index: None,
             status_message: String::new(),
             error_message: None,
-            delete_cache_after_load: false,
+            delete_cache_after_load: true,
             highlight_enabled: true,
             syntax_highlighting: SolverSyntaxHighlighting::load(),
             visual_text_background: HighlightBackgroundChoice::GuiDefault,
@@ -1360,5 +1360,11 @@ mod tests {
             strip_windows_extended_path_prefix(r"C:\models\main.fem"),
             r"C:\models\main.fem"
         );
+    }
+
+    #[test]
+    fn new_gui_app_enables_delete_cache_by_default() {
+        let app = FemReaderGuiApp::new(String::new());
+        assert!(app.delete_cache_after_load);
     }
 }
