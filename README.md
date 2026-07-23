@@ -126,6 +126,7 @@ Consulta la guía técnica para desarrolladores:
 - `DEVELOPER_GUIDE.md`
 - `OPTISTRUCT_CARDS_GUIDE.md` (cómo añadir nuevas tarjetas al parser de OptiStruct)
 - `DOTNET_INTEGRATION.md` (cómo integrar y llamar FEMReader desde una app .NET)
+- `DOTNET_DLL_INTEGRATION.md` (cómo compilar FEMReader como DLL y usar P/Invoke en .NET)
 
 ## Tests
 

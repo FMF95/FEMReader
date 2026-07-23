@@ -1,3 +1,4 @@
+use femreader::app::{ReaderRunConfig, run_reader};
 use femreader::assembler::DefaultModelAssembler;
 use femreader::cache::IncrementalCache;
 use femreader::dependency::DefaultDependencyResolver;
@@ -94,6 +95,25 @@ fn scanner_uses_incremental_cache() {
 
     let second = scanner.scan(&root, &mut cache).expect("second scan");
     assert!(second.files.iter().all(|f| !f.changed_since_last_scan));
+
+    fs::remove_dir_all(&root).expect("cleanup temp root");
+}
+
+#[test]
+fn run_reader_supports_pretty_json_output() {
+    let root = unique_temp_dir("run_reader_pretty");
+    fs::create_dir_all(&root).expect("create temp root");
+    fs::write(root.join("model.bdf"), "GRID,1").expect("write test file");
+
+    let output = run_reader(&ReaderRunConfig {
+        input_dir: root.clone(),
+        pretty: true,
+        delete_cache: true,
+    })
+    .expect("run reader");
+
+    assert!(output.contains("\n  \"schema_version\""));
+    assert!(output.trim_start().starts_with('{'));
 
     fs::remove_dir_all(&root).expect("cleanup temp root");
 }

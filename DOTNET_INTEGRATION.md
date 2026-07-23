@@ -2,6 +2,8 @@
 
 Esta guía explica cómo compilar FEMReader para producción, cómo invocarlo desde .NET y qué parámetros CLI existen actualmente.
 
+> Si necesitas integración **como DLL** con P/Invoke, consulta `DOTNET_DLL_INTEGRATION.md`.
+
 ## 1) Estrategia recomendada de integración
 
 La forma más simple y robusta es usar FEMReader como **proceso externo** (`femreader.exe`) desde .NET.
