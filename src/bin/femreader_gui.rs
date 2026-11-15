@@ -5,7 +5,8 @@ use femreader::assembler::DefaultModelAssembler;
 use femreader::cache::IncrementalCache;
 use femreader::dependency::DefaultDependencyResolver;
 use femreader::highlighting::{
-    HighlightKind, RgbColor, SyntaxHighlighter, highlighting_file_for_solver,
+    HighlightKind, RgbColor, SyntaxHighlighter, embedded_highlighting_xml,
+    highlighting_file_for_solver,
 };
 use femreader::model::{
     FileCategory, FileNode, HyperMeshCommentFields, Model, ModelContent, OptiStructCardKind,
@@ -973,8 +974,14 @@ fn card_field_names(kind: &OptiStructCardKind) -> Vec<&'static str> {
 
 fn load_highlighter_for_solver(solver: &SolverKind) -> Option<SyntaxHighlighter> {
     let file_name = highlighting_file_for_solver(solver)?;
-    let path = locate_highlighting_file(file_name)?;
-    SyntaxHighlighter::from_notepadpp_file(&path).ok()
+    if let Some(path) = locate_highlighting_file(file_name)
+        && let Ok(highlighter) = SyntaxHighlighter::from_notepadpp_file(&path)
+    {
+        return Some(highlighter);
+    }
+
+    embedded_highlighting_xml(file_name)
+        .and_then(|xml| SyntaxHighlighter::from_notepadpp_xml(xml).ok())
 }
 
 fn locate_highlighting_file(file_name: &str) -> Option<PathBuf> {

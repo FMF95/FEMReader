@@ -202,6 +202,17 @@ pub fn highlighting_file_for_solver(solver: &SolverKind) -> Option<&'static str>
     }
 }
 
+pub fn embedded_highlighting_xml(file_name: &str) -> Option<&'static str> {
+    match file_name {
+        "ABAQUS_6.13.xml" => Some(include_str!("../highlighting/ABAQUS_6.13.xml")),
+        "ABAQUS.xml" => Some(include_str!("../highlighting/ABAQUS.xml")),
+        "NASTRAN_mod.xml" => Some(include_str!("../highlighting/NASTRAN_mod.xml")),
+        "NASTRAN.xml" => Some(include_str!("../highlighting/NASTRAN.xml")),
+        "OptiStruct.xml" => Some(include_str!("../highlighting/OptiStruct.xml")),
+        _ => None,
+    }
+}
+
 fn push_span(spans: &mut Vec<HighlightSpan>, text: &str, kind: HighlightKind) {
     if let Some(last) = spans.last_mut()
         && last.kind == kind
@@ -629,5 +640,15 @@ mod tests {
             Some("ABAQUS_6.13.xml")
         );
         assert_eq!(highlighting_file_for_solver(&SolverKind::Unknown), None);
+    }
+
+    #[test]
+    fn embedded_solver_highlighting_files_are_parseable() {
+        for solver in [SolverKind::OptiStruct, SolverKind::Nastran, SolverKind::Abaqus] {
+            let file_name = highlighting_file_for_solver(&solver).expect("solver file mapping");
+            let xml = embedded_highlighting_xml(file_name).expect("embedded highlighting XML");
+            SyntaxHighlighter::from_notepadpp_xml(xml)
+                .expect("embedded highlighting XML should parse");
+        }
     }
 }
