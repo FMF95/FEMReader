@@ -36,6 +36,22 @@ Artefactos relevantes en Windows:
 - `target\release\femreader.dll`
 - `target\release\femreader.dll.lib` (import library para toolchains nativas)
 
+## Publicación automática en GitHub Releases
+
+El workflow `.github/workflows/release.yml` compila la DLL con Rust estable en `windows-latest` y adjunta `target\release\femreader.dll` a un Release de GitHub.
+
+Para lanzar una versión nueva:
+
+```bash
+git add .
+git commit -m "Prepare release v1.0.0"
+git tag v1.0.0
+git push origin main
+git push origin v1.0.0
+```
+
+Al subir el tag `v1.0.0`, GitHub Actions crea o actualiza el Release correspondiente. Sustituye `v1.0.0` por el nombre de la versión que corresponda y adapta el nombre de la rama si no usas `main`.
+
 ## 3) Verificar que el CLI sigue funcionando
 
 La llamada CLI que pediste sigue vigente:
