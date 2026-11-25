@@ -104,6 +104,9 @@ Además del `INCLUDE`, actualmente se tipan:
 - `GRID`
 - `CQUAD4`
 - `CTRIA3`
+- `CBUSH`
+- `PSHELL`
+- `PBUSH`
 - `FORCE`
 - `MOMENT`
 - `BEGIN BULK`

@@ -1,10 +1,10 @@
 use crate::model::{
-    BeginBulkCard, Cquad4Card, Ctria3Card, DependencyEdge, EndDataCard, FileCategory, FileNode,
-    ForceCard, GridCard, HMDPrpCommentFields, HMMoveCommentFields, HMNameCommentFields,
-    HWColorCommentFields, HyperMeshCommentFields, IncludeCard, Model, ModelContent, MomentCard,
-    OptiStructCardCount, OptiStructCardItem, OptiStructCardKind, OptiStructCommentItem,
+    BeginBulkCard, CbushCard, Cquad4Card, Ctria3Card, DependencyEdge, EndDataCard, FileCategory,
+    FileNode, ForceCard, GridCard, HMDPrpCommentFields, HMMoveCommentFields, HMNameCommentFields,
+    HWColorCommentFields, HyperMeshCommentFields, IncludeCard, Mat1Card, Model, ModelContent,
+    MomentCard, OptiStructCardCount, OptiStructCardItem, OptiStructCardKind, OptiStructCommentItem,
     OptiStructCommentKind, OptiStructFileSummary, OptiStructItem, OptiStructLocation,
-    OptiStructModelSummary, OptiStructTextItem, SolverKind, UnknownCard,
+    OptiStructModelSummary, OptiStructTextItem, PbushCard, PshellCard, SolverKind, UnknownCard,
 };
 
 pub trait Serializer {
@@ -302,6 +302,10 @@ fn serialize_optistruct_card_attributes(kind: &OptiStructCardKind) -> String {
         OptiStructCardKind::Ctria3(card) => serialize_ctria3_card(card),
         OptiStructCardKind::Force(card) => serialize_force_card(card),
         OptiStructCardKind::Moment(card) => serialize_moment_card(card),
+        OptiStructCardKind::Cbush(card) => serialize_cbush_card(card),
+        OptiStructCardKind::Pbush(card) => serialize_pbush_card(card),
+        OptiStructCardKind::Pshell(card) => serialize_pshell_card(card),
+        OptiStructCardKind::Mat1(card) => serialize_mat1_card(card),
         OptiStructCardKind::Include(card) => serialize_include_card(card),
         OptiStructCardKind::BeginBulk(card) => serialize_begin_bulk_card(card),
         OptiStructCardKind::EndData(card) => serialize_enddata_card(card),
@@ -324,6 +328,10 @@ fn serialize_json_guide_compact() -> String {
 \"CTRIA3\":[\"F1:card_name\",\"F2:id\",\"F3:pid\",\"F4:g1\",\"F5:g2\",\"F6:g3\",\"F7:theta_or_mcid\",\"F8:zoffs\",\"F9:tflag\",\"F10:t1\"],\
 \"FORCE\":[\"F1:card_name\",\"F2:sid\",\"F3:g\",\"F4:cid\",\"F5:f\",\"F6:n1\",\"F7:n2\",\"F8:n3\"],\
 \"MOMENT\":[\"F1:card_name\",\"F2:sid\",\"F3:g\",\"F4:cid\",\"F5:m\",\"F6:n1\",\"F7:n2\",\"F8:n3\"],\
+\"CBUSH\":[\"F1:card_name\",\"F2:eid\",\"F3:pid\",\"F4:ga\",\"F5:gb\",\"F6:cid\",\"F7:s\",\"F8:ocid\",\"F9:s1\",\"F10:s2\",\"F11:s3\"],\
+\"PBUSH\":[\"F1:card_name\",\"F2:pid\",\"F3:k1\",\"F4:k2\",\"F5:k3\",\"F6:k4\",\"F7:k5\",\"F8:k6\",\"F9:b1\",\"F10:b2\",\"F11:b3\",\"F12:b4\",\"F13:b5\",\"F14:b6\",\"F15:ge1\",\"F16:ge2\",\"F17:ge3\",\"F18:ge4\",\"F19:ge5\",\"F20:ge6\",\"F21:sa\",\"F22:sb\"],\
+\"PSHELL\":[\"F1:card_name\",\"F2:pid\",\"F3:mid1\",\"F4:t\",\"F5:mid2\",\"F6:twelve_i_over_t3\",\"F7:mid3\",\"F8:ts_over_t\",\"F9:nsm\",\"F10:z1\",\"F11:z2\",\"F12:mid4\"],\
+\"MAT1\":[\"F1:card_name\",\"F2:mid\",\"F3:e\",\"F4:g\",\"F5:nu\",\"F6:rho\",\"F7:a\",\"F8:tref\",\"F9:ge\",\"F10:st\",\"F11:sc\",\"F12:ss\",\"F13:mcsid\"],\
 \"INCLUDE\":[\"F1:card_name\",\"F2:target\"],\
 \"BEGIN BULK\":[],\
 \"ENDDATA\":[]\
@@ -405,6 +413,84 @@ fn serialize_moment_card(card: &MomentCard) -> String {
         serialize_opt_f64(card.n1),
         serialize_opt_f64(card.n2),
         serialize_opt_f64(card.n3)
+    )
+}
+
+fn serialize_cbush_card(card: &CbushCard) -> String {
+    format!(
+        "{{\"eid\":{},\"pid\":{},\"ga\":{},\"gb\":{},\"cid\":{},\"s\":{},\"ocid\":{},\"s1\":{},\"s2\":{},\"s3\":{}}}",
+        serialize_opt_i64(card.eid),
+        serialize_opt_i64(card.pid),
+        serialize_opt_i64(card.ga),
+        serialize_opt_i64(card.gb),
+        serialize_opt_i64(card.cid),
+        serialize_opt_f64(card.s),
+        serialize_opt_i64(card.ocid),
+        serialize_opt_f64(card.s1),
+        serialize_opt_f64(card.s2),
+        serialize_opt_f64(card.s3)
+    )
+}
+
+fn serialize_pbush_card(card: &PbushCard) -> String {
+    format!(
+        "{{\"pid\":{},\"k1\":{},\"k2\":{},\"k3\":{},\"k4\":{},\"k5\":{},\"k6\":{},\"b1\":{},\"b2\":{},\"b3\":{},\"b4\":{},\"b5\":{},\"b6\":{},\"ge1\":{},\"ge2\":{},\"ge3\":{},\"ge4\":{},\"ge5\":{},\"ge6\":{},\"sa\":{},\"sb\":{}}}",
+        serialize_opt_i64(card.pid),
+        serialize_opt_f64(card.k1),
+        serialize_opt_f64(card.k2),
+        serialize_opt_f64(card.k3),
+        serialize_opt_f64(card.k4),
+        serialize_opt_f64(card.k5),
+        serialize_opt_f64(card.k6),
+        serialize_opt_f64(card.b1),
+        serialize_opt_f64(card.b2),
+        serialize_opt_f64(card.b3),
+        serialize_opt_f64(card.b4),
+        serialize_opt_f64(card.b5),
+        serialize_opt_f64(card.b6),
+        serialize_opt_f64(card.ge1),
+        serialize_opt_f64(card.ge2),
+        serialize_opt_f64(card.ge3),
+        serialize_opt_f64(card.ge4),
+        serialize_opt_f64(card.ge5),
+        serialize_opt_f64(card.ge6),
+        serialize_opt_f64(card.sa),
+        serialize_opt_f64(card.sb)
+    )
+}
+
+fn serialize_pshell_card(card: &PshellCard) -> String {
+    format!(
+        "{{\"pid\":{},\"mid1\":{},\"t\":{},\"mid2\":{},\"twelve_i_over_t3\":{},\"mid3\":{},\"ts_over_t\":{},\"nsm\":{},\"z1\":{},\"z2\":{},\"mid4\":{}}}",
+        serialize_opt_i64(card.pid),
+        serialize_opt_i64(card.mid1),
+        serialize_opt_f64(card.t),
+        serialize_opt_i64(card.mid2),
+        serialize_opt_f64(card.twelve_i_over_t3),
+        serialize_opt_i64(card.mid3),
+        serialize_opt_f64(card.ts_over_t),
+        serialize_opt_f64(card.nsm),
+        serialize_opt_f64(card.z1),
+        serialize_opt_f64(card.z2),
+        serialize_opt_i64(card.mid4)
+    )
+}
+
+fn serialize_mat1_card(card: &Mat1Card) -> String {
+    format!(
+        "{{\"mid\":{},\"e\":{},\"g\":{},\"nu\":{},\"rho\":{},\"a\":{},\"tref\":{},\"ge\":{},\"st\":{},\"sc\":{},\"ss\":{},\"mcsid\":{}}}",
+        serialize_opt_i64(card.mid),
+        serialize_opt_f64(card.e),
+        serialize_opt_f64(card.g),
+        serialize_opt_f64(card.nu),
+        serialize_opt_f64(card.rho),
+        serialize_opt_f64(card.a),
+        serialize_opt_f64(card.tref),
+        serialize_opt_f64(card.ge),
+        serialize_opt_f64(card.st),
+        serialize_opt_f64(card.sc),
+        serialize_opt_f64(card.ss),
+        serialize_opt_i64(card.mcsid)
     )
 }
 
@@ -597,13 +683,32 @@ fn escape(value: &str) -> String {
 
 #[cfg(test)]
 mod tests {
-    use super::{SCHEMA_CONTRACT_MARKER, schema_contract_marker, serialize_compact};
+    use super::{
+        SCHEMA_CONTRACT_MARKER, schema_contract_marker, serialize_compact,
+        serialize_optistruct_item_compact,
+    };
     use crate::model::{
         BeginBulkCard, Model, ModelContent, OptiStructCardCount, OptiStructCardItem,
         OptiStructCardKind, OptiStructFileSummary, OptiStructItem, OptiStructLocation,
         OptiStructModelSummary, SCHEMA_VERSION, SolverKind,
     };
     use std::path::PathBuf;
+
+    fn short_card(name: &str, values: &[&str]) -> String {
+        let mut lines = Vec::new();
+        for (line_index, chunk) in values.chunks(9).enumerate() {
+            let mut line = if line_index == 0 {
+                format!("{name:<8}")
+            } else {
+                "*       ".to_string()
+            };
+            for value in chunk {
+                line.push_str(&format!("{value:<8}"));
+            }
+            lines.push(line.trim_end().to_string());
+        }
+        lines.join("\n")
+    }
 
     fn sample_content() -> ModelContent {
         let location = OptiStructLocation {
@@ -683,6 +788,57 @@ mod tests {
         assert!(json.contains("\"fields\":[]"));
         assert!(!json.contains("\"raw_text\""));
         assert!(!json.contains("\"kind\":"));
+    }
+
+    #[test]
+    fn new_optistruct_cards_serialize_typed_attributes_inside_card_items() {
+        let source = [
+            short_card(
+                "CBUSH",
+                &["101", "20", "1", "2", "0", "0.5", "9", "0.1", "0.2", "0.3"],
+            ),
+            short_card(
+                "PBUSH",
+                &[
+                    "30", "1", "2", "3", "4", "5", "6", "7", "8", "9", "10", "11", "12", "13",
+                    "14", "15", "16", "17", "18", "19", "20",
+                ],
+            ),
+            short_card(
+                "PSHELL",
+                &[
+                    "40", "50", "0.25", "51", "0.083", "52", "0.1", "0.01", "-0.125", "0.125", "53",
+                ],
+            ),
+            short_card(
+                "MAT1",
+                &[
+                    "60", "210000", "80000", "0.3", "7.8e-9", "1.2e-5", "20", "0.02", "100", "200",
+                    "300", "4",
+                ],
+            ),
+        ]
+        .join("\n");
+        let items = crate::optistruct::parse_file_items(
+            "file:serialized-cards",
+            &PathBuf::from("cards.fem"),
+            &source,
+        );
+        let serialized = items
+            .iter()
+            .map(serialize_optistruct_item_compact)
+            .collect::<Vec<_>>();
+
+        assert!(serialized[0].contains("\"type\":\"Card\""));
+        assert!(serialized[0].contains("\"card_name\":\"CBUSH\""));
+        assert!(serialized[0].contains("\"attributes\":{\"eid\":101,\"pid\":20"));
+        assert!(serialized[1].contains("\"card_name\":\"PBUSH\""));
+        assert!(serialized[1].contains("\"k1\":1,"));
+        assert!(serialized[1].contains("\"sb\":20}"));
+        assert!(serialized[2].contains("\"card_name\":\"PSHELL\""));
+        assert!(serialized[2].contains("\"twelve_i_over_t3\":0.083"));
+        assert!(serialized[3].contains("\"card_name\":\"MAT1\""));
+        assert!(serialized[3].contains("\"mcsid\":4"));
     }
 
     #[test]

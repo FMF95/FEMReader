@@ -29,11 +29,16 @@ Cada item es:
 | `CTRIA3` | `Ctria3Card` | `id`, `pid`, `g1..g3`, `theta_or_mcid`, `zoffs`, `tflag`, `t1..t3` |
 | `FORCE` | `ForceCard` | `sid`, `g`, `cid`, `f`, `n1`, `n2`, `n3` |
 | `MOMENT` | `MomentCard` | `sid`, `g`, `cid`, `m`, `n1`, `n2`, `n3` |
+| `CBUSH` | `CbushCard` | `eid`, `pid`, `ga`, `gb`, `cid`, `s`, `ocid`, `s1..s3` |
+| `PBUSH` | `PbushCard` | `pid`, `k1..k6`, `b1..b6`, `ge1..ge6`, `sa`, `sb` |
+| `PSHELL` | `PshellCard` | `pid`, `mid1`, `t`, `mid2`, `twelve_i_over_t3`, `mid3`, `ts_over_t`, `nsm`, `z1`, `z2`, `mid4` |
+| `MAT1` | `Mat1Card` | `mid`, `e`, `g`, `nu`, `rho`, `a`, `tref`, `ge`, `st`, `sc`, `ss`, `mcsid` |
 | `INCLUDE` | `IncludeCard` | `target` |
 | `BEGIN BULK` | `BeginBulkCard` | marcador de inicio del bloque bulk |
 | `ENDDATA` | `EndDataCard` | marcador de cierre del bloque de datos |
 
 Solo se parsean por campos las tarjetas con parser específico. Las líneas no soportadas se conservan como `Text`.
+Las tarjetas añadidas mantienen `type: "Card"` y exponen sus campos tipados en `attributes`; no se añade una colección ni cambia la estructura de primer nivel del JSON.
 
 Notas de campos:
 
@@ -69,9 +74,8 @@ Casos cubiertos:
 2. Añade la variante en `OptiStructCardKind`.
 3. En `src/optistruct.rs`, extiende `parse_card_kind` con el nombre de la tarjeta y mapeo de campos.
 4. Extiende serialización en `src/serializer.rs`:
-   - `serialize_optistruct_item_compact`
    - `serialize_optistruct_card_attributes`
-   - función específica de serialización.
+   - función específica de serialización y su entrada en `card_field_templates`.
 5. Extiende visualización en GUI (`src/bin/femreader_gui.rs`) en `render_card_named_fields`.
 6. Añade tests unitarios en `src/optistruct.rs` y, si aplica, un test de integración en `tests/integration_reader.rs`.
 

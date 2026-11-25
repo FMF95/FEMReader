@@ -1,10 +1,11 @@
 use crate::ids::{leaf_name, stable_id};
 use crate::model::{
-    BeginBulkCard, Cquad4Card, Ctria3Card, EndDataCard, ForceCard, GridCard, HMDPrpCommentFields,
-    HMMoveCommentFields, HMNameCommentFields, HWColorCommentFields, HyperMeshCommentFields,
-    IncludeCard, MomentCard, OptiStructCardCount, OptiStructCardItem, OptiStructCardKind,
-    OptiStructCommentItem, OptiStructCommentKind, OptiStructFileSummary, OptiStructItem,
-    OptiStructLocation, OptiStructTextItem, UnknownCard,
+    BeginBulkCard, CbushCard, Cquad4Card, Ctria3Card, EndDataCard, ForceCard, GridCard,
+    HMDPrpCommentFields, HMMoveCommentFields, HMNameCommentFields, HWColorCommentFields,
+    HyperMeshCommentFields, IncludeCard, Mat1Card, MomentCard, OptiStructCardCount,
+    OptiStructCardItem, OptiStructCardKind, OptiStructCommentItem, OptiStructCommentKind,
+    OptiStructFileSummary, OptiStructItem, OptiStructLocation, OptiStructTextItem, PbushCard,
+    PshellCard, UnknownCard,
 };
 use std::collections::BTreeMap;
 use std::path::Path;
@@ -331,6 +332,68 @@ fn parse_card_kind(card_name: &str, fields: &[String]) -> OptiStructCardKind {
             n2: field_f64(fields, 5),
             n3: field_f64(fields, 6),
         }),
+        "CBUSH" => OptiStructCardKind::Cbush(CbushCard {
+            eid: field_i64(fields, 0),
+            pid: field_i64(fields, 1),
+            ga: field_i64(fields, 2),
+            gb: field_i64(fields, 3),
+            cid: field_i64(fields, 4),
+            s: field_f64(fields, 5),
+            ocid: field_i64(fields, 6),
+            s1: field_f64(fields, 7),
+            s2: field_f64(fields, 8),
+            s3: field_f64(fields, 9),
+        }),
+        "PBUSH" => OptiStructCardKind::Pbush(PbushCard {
+            pid: field_i64(fields, 0),
+            k1: field_f64(fields, 1),
+            k2: field_f64(fields, 2),
+            k3: field_f64(fields, 3),
+            k4: field_f64(fields, 4),
+            k5: field_f64(fields, 5),
+            k6: field_f64(fields, 6),
+            b1: field_f64(fields, 7),
+            b2: field_f64(fields, 8),
+            b3: field_f64(fields, 9),
+            b4: field_f64(fields, 10),
+            b5: field_f64(fields, 11),
+            b6: field_f64(fields, 12),
+            ge1: field_f64(fields, 13),
+            ge2: field_f64(fields, 14),
+            ge3: field_f64(fields, 15),
+            ge4: field_f64(fields, 16),
+            ge5: field_f64(fields, 17),
+            ge6: field_f64(fields, 18),
+            sa: field_f64(fields, 19),
+            sb: field_f64(fields, 20),
+        }),
+        "PSHELL" => OptiStructCardKind::Pshell(PshellCard {
+            pid: field_i64(fields, 0),
+            mid1: field_i64(fields, 1),
+            t: field_f64(fields, 2),
+            mid2: field_i64(fields, 3),
+            twelve_i_over_t3: field_f64(fields, 4),
+            mid3: field_i64(fields, 5),
+            ts_over_t: field_f64(fields, 6),
+            nsm: field_f64(fields, 7),
+            z1: field_f64(fields, 8),
+            z2: field_f64(fields, 9),
+            mid4: field_i64(fields, 10),
+        }),
+        "MAT1" => OptiStructCardKind::Mat1(Mat1Card {
+            mid: field_i64(fields, 0),
+            e: field_f64(fields, 1),
+            g: field_f64(fields, 2),
+            nu: field_f64(fields, 3),
+            rho: field_f64(fields, 4),
+            a: field_f64(fields, 5),
+            tref: field_f64(fields, 6),
+            ge: field_f64(fields, 7),
+            st: field_f64(fields, 8),
+            sc: field_f64(fields, 9),
+            ss: field_f64(fields, 10),
+            mcsid: field_i64(fields, 11),
+        }),
         "INCLUDE" => OptiStructCardKind::Include(IncludeCard {
             target: parse_include_target(fields).unwrap_or_default(),
         }),
@@ -596,7 +659,9 @@ fn parse_card_start(line: &str, line_number: usize) -> Option<RawCardRecord> {
 fn extend_card_with_continuation(card: &mut RawCardRecord, line: &str, line_number: usize) {
     card.text.push('\n');
     card.text.push_str(line);
-    let payload = line.trim_start().trim_start_matches('*');
+    let continuation = line.trim_start();
+    let payload = continuation.strip_prefix('*').unwrap_or(continuation);
+    let payload = payload.strip_prefix("       ").unwrap_or(payload);
     let width = if card.long_format { 16 } else { 8 };
     let mut continuation_fields = split_fixed_width_fields(payload, width, None);
     trim_trailing_empty_fields(&mut continuation_fields);
@@ -633,7 +698,17 @@ fn is_begin_bulk_slots(slots: &[String]) -> bool {
 fn is_supported_card_name(card_name: &str) -> bool {
     matches!(
         card_name.to_ascii_uppercase().as_str(),
-        "GRID" | "CQUAD4" | "CTRIA3" | "FORCE" | "MOMENT" | "INCLUDE" | "ENDDATA"
+        "GRID"
+            | "CQUAD4"
+            | "CTRIA3"
+            | "FORCE"
+            | "MOMENT"
+            | "CBUSH"
+            | "PBUSH"
+            | "PSHELL"
+            | "MAT1"
+            | "INCLUDE"
+            | "ENDDATA"
     )
 }
 
@@ -719,6 +794,121 @@ mod tests {
         HyperMeshCommentFields, OptiStructCardKind, OptiStructCommentKind, OptiStructItem,
     };
     use std::path::Path;
+
+    fn short_card(name: &str, values: &[&str]) -> String {
+        let mut lines = Vec::new();
+        for (line_index, chunk) in values.chunks(9).enumerate() {
+            let mut line = if line_index == 0 {
+                format!("{name:<8}")
+            } else {
+                "*       ".to_string()
+            };
+            for value in chunk {
+                line.push_str(&format!("{value:<8}"));
+            }
+            lines.push(line.trim_end().to_string());
+        }
+        lines.join("\n")
+    }
+
+    #[test]
+    fn parses_cbush_pbush_pshell_and_mat1_fields() {
+        let content = [
+            short_card(
+                "CBUSH",
+                &["101", "20", "1", "2", "0", "0.5", "9", "0.1", "0.2", "0.3"],
+            ),
+            short_card(
+                "PBUSH",
+                &[
+                    "30", "1", "2", "3", "4", "5", "6", "7", "8", "9", "10", "11", "12", "13",
+                    "14", "15", "16", "17", "18", "19", "20",
+                ],
+            ),
+            short_card(
+                "PSHELL",
+                &[
+                    "40", "50", "0.25", "51", "0.083", "52", "0.1", "0.01", "-0.125", "0.125", "53",
+                ],
+            ),
+            short_card(
+                "MAT1",
+                &[
+                    "60", "210000", "80000", "0.3", "7.8e-9", "1.2e-5", "20", "0.02", "100", "200",
+                    "300", "4",
+                ],
+            ),
+        ]
+        .join("\n");
+        let items = parse_file_items("file:cards", Path::new("cards.fem"), &content);
+        let cards = items
+            .iter()
+            .filter_map(|item| match item {
+                OptiStructItem::Card(card) => Some(card),
+                OptiStructItem::Comment(_) | OptiStructItem::Text(_) => None,
+            })
+            .collect::<Vec<_>>();
+
+        assert_eq!(cards.len(), 4);
+        assert!(matches!(
+            &cards[0].kind,
+            OptiStructCardKind::Cbush(card)
+                if card.eid == Some(101)
+                    && card.pid == Some(20)
+                    && card.ga == Some(1)
+                    && card.gb == Some(2)
+                    && card.cid == Some(0)
+                    && card.s == Some(0.5)
+                    && card.ocid == Some(9)
+                    && card.s1 == Some(0.1)
+                    && card.s2 == Some(0.2)
+                    && card.s3 == Some(0.3)
+        ));
+        assert!(matches!(
+            &cards[1].kind,
+            OptiStructCardKind::Pbush(card)
+                if card.pid == Some(30)
+                    && card.k1 == Some(1.0)
+                    && card.k6 == Some(6.0)
+                    && card.b1 == Some(7.0)
+                    && card.b6 == Some(12.0)
+                    && card.ge1 == Some(13.0)
+                    && card.ge6 == Some(18.0)
+                    && card.sa == Some(19.0)
+                    && card.sb == Some(20.0)
+        ));
+        assert!(matches!(
+            &cards[2].kind,
+            OptiStructCardKind::Pshell(card)
+                if card.pid == Some(40)
+                    && card.mid1 == Some(50)
+                    && card.t == Some(0.25)
+                    && card.mid2 == Some(51)
+                    && card.twelve_i_over_t3 == Some(0.083)
+                    && card.mid3 == Some(52)
+                    && card.ts_over_t == Some(0.1)
+                    && card.nsm == Some(0.01)
+                    && card.z1 == Some(-0.125)
+                    && card.z2 == Some(0.125)
+                    && card.mid4 == Some(53)
+        ));
+        assert!(matches!(
+            &cards[3].kind,
+            OptiStructCardKind::Mat1(card)
+                if card.mid == Some(60)
+                    && card.e == Some(210000.0)
+                    && card.g == Some(80000.0)
+                    && card.nu == Some(0.3)
+                    && card.rho == Some(7.8e-9)
+                    && card.a == Some(1.2e-5)
+                    && card.tref == Some(20.0)
+                    && card.ge == Some(0.02)
+                    && card.st == Some(100.0)
+                    && card.sc == Some(200.0)
+                    && card.ss == Some(300.0)
+                    && card.mcsid == Some(4)
+        ));
+    }
 
     #[test]
     fn parses_grid_cquad4_ctria3_force_moment_include_begin_and_end_cards() {

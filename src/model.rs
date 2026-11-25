@@ -192,6 +192,76 @@ pub struct MomentCard {
     pub n3: Option<f64>,
 }
 
+#[derive(Debug, Clone, PartialEq)]
+pub struct CbushCard {
+    pub eid: Option<i64>,
+    pub pid: Option<i64>,
+    pub ga: Option<i64>,
+    pub gb: Option<i64>,
+    pub cid: Option<i64>,
+    pub s: Option<f64>,
+    pub ocid: Option<i64>,
+    pub s1: Option<f64>,
+    pub s2: Option<f64>,
+    pub s3: Option<f64>,
+}
+
+#[derive(Debug, Clone, PartialEq)]
+pub struct PbushCard {
+    pub pid: Option<i64>,
+    pub k1: Option<f64>,
+    pub k2: Option<f64>,
+    pub k3: Option<f64>,
+    pub k4: Option<f64>,
+    pub k5: Option<f64>,
+    pub k6: Option<f64>,
+    pub b1: Option<f64>,
+    pub b2: Option<f64>,
+    pub b3: Option<f64>,
+    pub b4: Option<f64>,
+    pub b5: Option<f64>,
+    pub b6: Option<f64>,
+    pub ge1: Option<f64>,
+    pub ge2: Option<f64>,
+    pub ge3: Option<f64>,
+    pub ge4: Option<f64>,
+    pub ge5: Option<f64>,
+    pub ge6: Option<f64>,
+    pub sa: Option<f64>,
+    pub sb: Option<f64>,
+}
+
+#[derive(Debug, Clone, PartialEq)]
+pub struct PshellCard {
+    pub pid: Option<i64>,
+    pub mid1: Option<i64>,
+    pub t: Option<f64>,
+    pub mid2: Option<i64>,
+    pub twelve_i_over_t3: Option<f64>,
+    pub mid3: Option<i64>,
+    pub ts_over_t: Option<f64>,
+    pub nsm: Option<f64>,
+    pub z1: Option<f64>,
+    pub z2: Option<f64>,
+    pub mid4: Option<i64>,
+}
+
+#[derive(Debug, Clone, PartialEq)]
+pub struct Mat1Card {
+    pub mid: Option<i64>,
+    pub e: Option<f64>,
+    pub g: Option<f64>,
+    pub nu: Option<f64>,
+    pub rho: Option<f64>,
+    pub a: Option<f64>,
+    pub tref: Option<f64>,
+    pub ge: Option<f64>,
+    pub st: Option<f64>,
+    pub sc: Option<f64>,
+    pub ss: Option<f64>,
+    pub mcsid: Option<i64>,
+}
+
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct IncludeCard {
     pub target: String,
@@ -215,6 +285,10 @@ pub enum OptiStructCardKind {
     Ctria3(Ctria3Card),
     Force(ForceCard),
     Moment(MomentCard),
+    Cbush(CbushCard),
+    Pbush(PbushCard),
+    Pshell(PshellCard),
+    Mat1(Mat1Card),
     Include(IncludeCard),
     BeginBulk(BeginBulkCard),
     EndData(EndDataCard),

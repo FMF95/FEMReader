@@ -965,6 +965,20 @@ fn card_field_names(kind: &OptiStructCardKind) -> Vec<&'static str> {
         OptiStructCardKind::Moment(_) => {
             vec!["CARD", "SID", "G", "CID", "M", "N1", "N2", "N3"]
         }
+        OptiStructCardKind::Cbush(_) => vec![
+            "CARD", "EID", "PID", "GA", "GB", "CID", "S", "OCID", "S1", "S2", "S3",
+        ],
+        OptiStructCardKind::Pbush(_) => vec![
+            "CARD", "PID", "K1", "K2", "K3", "K4", "K5", "K6", "B1", "B2", "B3", "B4", "B5", "B6",
+            "GE1", "GE2", "GE3", "GE4", "GE5", "GE6", "SA", "SB",
+        ],
+        OptiStructCardKind::Pshell(_) => vec![
+            "CARD", "PID", "MID1", "T", "MID2", "12I/T^3", "MID3", "TS/T", "NSM", "Z1", "Z2",
+            "MID4",
+        ],
+        OptiStructCardKind::Mat1(_) => vec![
+            "CARD", "MID", "E", "G", "NU", "RHO", "A", "TREF", "GE", "ST", "SC", "SS", "MCSID",
+        ],
         OptiStructCardKind::Include(_) => vec!["CARD", "TARGET"],
         OptiStructCardKind::BeginBulk(_) => Vec::new(),
         OptiStructCardKind::EndData(_) => Vec::new(),
