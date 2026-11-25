@@ -331,7 +331,7 @@ fn serialize_json_guide_compact() -> String {
 \"CTRIA3\":[\"F1:card_name\",\"F2:id\",\"F3:pid\",\"F4:g1\",\"F5:g2\",\"F6:g3\",\"F7:theta_or_mcid\",\"F8:zoffs\",\"F9:tflag\",\"F10:t1\"],\
 \"FORCE\":[\"F1:card_name\",\"F2:sid\",\"F3:g\",\"F4:cid\",\"F5:f\",\"F6:n1\",\"F7:n2\",\"F8:n3\"],\
 \"MOMENT\":[\"F1:card_name\",\"F2:sid\",\"F3:g\",\"F4:cid\",\"F5:m\",\"F6:n1\",\"F7:n2\",\"F8:n3\"],\
-\"CBUSH\":[\"F1:card_name\",\"F2:eid\",\"F3:pid\",\"F4:ga\",\"F5:gb\",\"F6:cid\",\"F7:s\",\"F8:ocid\",\"F9:s1\",\"F10:s2\",\"F11:s3\"],\
+\"CBUSH\":[\"F1:card_name\",\"F2:eid\",\"F3:pid\",\"F4:ga\",\"F5:gb\",\"F6:g0/x1\",\"F7:x2\",\"F8:x3\",\"F9:cid\",\"F10:s\",\"F11:ocid\",\"F12:s1\",\"F13:s2\",\"F14:s3\"],\
 \"PBUSH\":[\"F1:card_name\",\"F2:pid\",\"F3:k1\",\"F4:k2\",\"F5:k3\",\"F6:k4\",\"F7:k5\",\"F8:k6\",\"F9:b1\",\"F10:b2\",\"F11:b3\",\"F12:b4\",\"F13:b5\",\"F14:b6\",\"F15:ge1\",\"F16:ge2\",\"F17:ge3\",\"F18:ge4\",\"F19:ge5\",\"F20:ge6\",\"F21:sa\",\"F22:sb\"],\
 \"PSHELL\":[\"F1:card_name\",\"F2:pid\",\"F3:mid1\",\"F4:t\",\"F5:mid2\",\"F6:twelve_i_over_t3\",\"F7:mid3\",\"F8:ts_over_t\",\"F9:nsm\",\"F10:z1\",\"F11:z2\",\"F12:mid4\"],\
 \"MAT1\":[\"F1:card_name\",\"F2:mid\",\"F3:e\",\"F4:g\",\"F5:nu\",\"F6:rho\",\"F7:a\",\"F8:tref\",\"F9:ge\",\"F10:st\",\"F11:sc\",\"F12:ss\",\"F13:mcsid\"],\
@@ -423,11 +423,15 @@ fn serialize_moment_card(card: &MomentCard) -> String {
 
 fn serialize_cbush_card(card: &CbushCard) -> String {
     format!(
-        "{{\"eid\":{},\"pid\":{},\"ga\":{},\"gb\":{},\"cid\":{},\"s\":{},\"ocid\":{},\"s1\":{},\"s2\":{},\"s3\":{}}}",
+        "{{\"eid\":{},\"pid\":{},\"ga\":{},\"gb\":{},\"g0\":{},\"x1\":{},\"x2\":{},\"x3\":{},\"cid\":{},\"s\":{},\"ocid\":{},\"s1\":{},\"s2\":{},\"s3\":{}}}",
         serialize_opt_i64(card.eid),
         serialize_opt_i64(card.pid),
         serialize_opt_i64(card.ga),
         serialize_opt_i64(card.gb),
+        serialize_opt_i64(card.g0),
+        serialize_opt_f64(card.x1),
+        serialize_opt_f64(card.x2),
+        serialize_opt_f64(card.x3),
         serialize_opt_i64(card.cid),
         serialize_opt_f64(card.s),
         serialize_opt_i64(card.ocid),
@@ -827,7 +831,7 @@ mod tests {
         let source = [
             short_card(
                 "CBUSH",
-                &["101", "20", "1", "2", "0", "0.5", "9", "0.1", "0.2", "0.3"],
+                &["601", "3", "604", "263", ".5773503", ".5773503", ".5773503"],
             ),
             short_card(
                 "PBUSH",
@@ -871,7 +875,10 @@ mod tests {
 
         assert!(serialized[0].contains("\"type\":\"Card\""));
         assert!(serialized[0].contains("\"card_name\":\"CBUSH\""));
-        assert!(serialized[0].contains("\"attributes\":{\"eid\":101,\"pid\":20"));
+        assert!(serialized[0].contains("\"attributes\":{\"eid\":601,\"pid\":3"));
+        assert!(serialized[0].contains("\"x1\":0.5773503"));
+        assert!(serialized[0].contains("\"x2\":0.5773503"));
+        assert!(serialized[0].contains("\"x3\":0.5773503"));
         assert!(serialized[1].contains("\"card_name\":\"PBUSH\""));
         assert!(serialized[1].contains("\"k1\":1,"));
         assert!(serialized[1].contains("\"sb\":20}"));

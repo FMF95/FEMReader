@@ -226,7 +226,10 @@ fn parse_raw_records(content: &str) -> Vec<RawRecord> {
             continue;
         }
 
-        if is_continuation_line(payload) {
+        let blank_field_continuation = current_card
+            .as_ref()
+            .is_some_and(|card| !card.long_format && has_blank_first_field(payload));
+        if is_continuation_line(payload) || blank_field_continuation {
             if let Some(card) = current_card.as_mut() {
                 extend_card_with_continuation(card, payload, line_number);
             } else {
@@ -332,18 +335,49 @@ fn parse_card_kind(card_name: &str, fields: &[String]) -> OptiStructCardKind {
             n2: field_f64(fields, 5),
             n3: field_f64(fields, 6),
         }),
-        "CBUSH" => OptiStructCardKind::Cbush(CbushCard {
-            eid: field_i64(fields, 0),
-            pid: field_i64(fields, 1),
-            ga: field_i64(fields, 2),
-            gb: field_i64(fields, 3),
-            cid: field_i64(fields, 4),
-            s: field_f64(fields, 5),
-            ocid: field_i64(fields, 6),
-            s1: field_f64(fields, 7),
-            s2: field_f64(fields, 8),
-            s3: field_f64(fields, 9),
-        }),
+        "CBUSH" => {
+            let orientation = field_string(fields, 4);
+            let x2 = field_f64(fields, 5);
+            let x3 = field_f64(fields, 6);
+            let orientation_is_vector = x2.is_some()
+                || x3.is_some()
+                || orientation.as_ref().is_some_and(|value| {
+                    value
+                        .chars()
+                        .any(|ch| matches!(ch, '.' | 'e' | 'E' | 'd' | 'D'))
+                });
+            let (g0, x1) = if orientation_is_vector {
+                (
+                    None,
+                    orientation
+                        .as_deref()
+                        .and_then(|value| value.parse::<f64>().ok()),
+                )
+            } else {
+                (
+                    orientation
+                        .as_deref()
+                        .and_then(|value| value.parse::<i64>().ok()),
+                    None,
+                )
+            };
+            OptiStructCardKind::Cbush(CbushCard {
+                eid: field_i64(fields, 0),
+                pid: field_i64(fields, 1),
+                ga: field_i64(fields, 2),
+                gb: field_i64(fields, 3),
+                g0,
+                x1,
+                x2: if orientation_is_vector { x2 } else { None },
+                x3: if orientation_is_vector { x3 } else { None },
+                cid: field_i64(fields, 7),
+                s: field_f64(fields, 9),
+                ocid: field_i64(fields, 10),
+                s1: field_f64(fields, 11),
+                s2: field_f64(fields, 12),
+                s3: field_f64(fields, 13),
+            })
+        }
         "PBUSH" => OptiStructCardKind::Pbush(PbushCard {
             pid: field_i64(fields, 0),
             k1: field_f64(fields, 1),
@@ -617,6 +651,11 @@ fn is_continuation_line(line: &str) -> bool {
     line.trim_start().starts_with('*')
 }
 
+fn has_blank_first_field(line: &str) -> bool {
+    line.get(..8).is_some_and(|field| field.trim().is_empty())
+        && line.get(8..).is_some_and(|rest| !rest.trim().is_empty())
+}
+
 fn flush_pending_card(card: &mut Option<RawCardRecord>, records: &mut Vec<RawRecord>) {
     if let Some(card) = card.take() {
         records.push(RawRecord::Card(card));
@@ -688,9 +727,19 @@ fn parse_card_start(line: &str, line_number: usize) -> Option<RawCardRecord> {
 fn extend_card_with_continuation(card: &mut RawCardRecord, line: &str, line_number: usize) {
     card.text.push('\n');
     card.text.push_str(line);
-    let continuation = line.trim_start();
-    let payload = continuation.strip_prefix('*').unwrap_or(continuation);
-    let payload = payload.strip_prefix("       ").unwrap_or(payload);
+    let blank_field_continuation = !card.long_format && has_blank_first_field(line);
+    let payload = if blank_field_continuation {
+        let remainder = card.fields.len() % 10;
+        if remainder != 0 {
+            card.fields
+                .resize(card.fields.len() + (10 - remainder), String::new());
+        }
+        &line[8..]
+    } else {
+        let continuation = line.trim_start();
+        let payload = continuation.strip_prefix('*').unwrap_or(continuation);
+        payload.strip_prefix("       ").unwrap_or(payload)
+    };
     let width = if card.long_format { 16 } else { 8 };
     let mut continuation_fields = split_fixed_width_fields(payload, width, None);
     trim_trailing_empty_fields(&mut continuation_fields);
@@ -844,11 +893,20 @@ mod tests {
 
     #[test]
     fn parses_cbush_pbush_pshell_and_mat1_fields() {
-        let content = [
+        let cbush = format!(
+            "{}\n        {:<8}{:<8}{:<8}{:<8}{:<8}",
             short_card(
                 "CBUSH",
-                &["101", "20", "1", "2", "0", "0.5", "9", "0.1", "0.2", "0.3"],
+                &["601", "3", "604", "263", ".5773503", ".5773503", ".5773503",],
             ),
+            "0.5",
+            "7",
+            "1.0",
+            "0.5",
+            "-0.7"
+        );
+        let content = [
+            cbush,
             short_card(
                 "PBUSH",
                 &[
@@ -892,16 +950,33 @@ mod tests {
         assert!(matches!(
             &cards[0].kind,
             OptiStructCardKind::Cbush(card)
-                if card.eid == Some(101)
-                    && card.pid == Some(20)
-                    && card.ga == Some(1)
-                    && card.gb == Some(2)
-                    && card.cid == Some(0)
+                if card.eid == Some(601)
+                    && card.pid == Some(3)
+                    && card.ga == Some(604)
+                    && card.gb == Some(263)
+                    && card.g0 == None
+                    && card.x1 == Some(0.5773503)
+                    && card.x2 == Some(0.5773503)
+                    && card.x3 == Some(0.5773503)
+                    && card.cid == None
                     && card.s == Some(0.5)
-                    && card.ocid == Some(9)
-                    && card.s1 == Some(0.1)
-                    && card.s2 == Some(0.2)
-                    && card.s3 == Some(0.3)
+                    && card.ocid == Some(7)
+                    && card.s1 == Some(1.0)
+                    && card.s2 == Some(0.5)
+                    && card.s3 == Some(-0.7)
+        ));
+        let g0_items = parse_file_items(
+            "file:cbush-g0",
+            Path::new("cbush-g0.fem"),
+            &short_card("CBUSH", &["602", "3", "604", "263", "800"]),
+        );
+        assert!(matches!(
+            &g0_items[0],
+            OptiStructItem::Card(card)
+                if matches!(
+                    &card.kind,
+                    OptiStructCardKind::Cbush(cbush) if cbush.g0 == Some(800) && cbush.x1.is_none()
+                )
         ));
         assert!(matches!(
             &cards[1].kind,

@@ -29,7 +29,7 @@ Cada item es:
 | `CTRIA3` | `Ctria3Card` | `id`, `pid`, `g1..g3`, `theta_or_mcid`, `zoffs`, `tflag`, `t1..t3` |
 | `FORCE` | `ForceCard` | `sid`, `g`, `cid`, `f`, `n1`, `n2`, `n3` |
 | `MOMENT` | `MomentCard` | `sid`, `g`, `cid`, `m`, `n1`, `n2`, `n3` |
-| `CBUSH` | `CbushCard` | `eid`, `pid`, `ga`, `gb`, `cid`, `s`, `ocid`, `s1..s3` |
+| `CBUSH` | `CbushCard` | `eid`, `pid`, `ga`, `gb`, `g0` o `x1..x3`, `cid`, `s`, `ocid`, `s1..s3` |
 | `PBUSH` | `PbushCard` | `pid`, `k1..k6`, `b1..b6`, `ge1..ge6`, `sa`, `sb` |
 | `PSHELL` | `PshellCard` | `pid`, `mid1`, `t`, `mid2`, `twelve_i_over_t3`, `mid3`, `ts_over_t`, `nsm`, `z1`, `z2`, `mid4` |
 | `MAT1` | `Mat1Card` | `mid`, `e`, `g`, `nu`, `rho`, `a`, `tref`, `ge`, `st`, `sc`, `ss`, `mcsid` |
@@ -43,6 +43,7 @@ Solo se parsean por campos las tarjetas con parser específico. Las líneas no s
 Las tarjetas añadidas mantienen `type: "Card"` y exponen sus campos tipados en `attributes`; no se añade una colección ni cambia la estructura de primer nivel del JSON.
 En `RBE3`, `remaining_fields` conserva en orden los grupos variables de peso/componentes/nodos y los campos opcionales, sin reinterpretar su estructura.
 La GUI muestra como `null` los campos conocidos que estén vacíos o no aparezcan en la tarjeta.
+En `CBUSH`, `G0` y `X1` son alternativas en la misma posición; se interpreta como vector si hay `X2`/`X3` o el primer valor tiene formato real, y como `G0` si es un entero aislado. La continuación corta con los primeros 8 caracteres vacíos se alinea a los campos de la siguiente línea lógica, incluidos `S`, `OCID` y `S1..S3`.
 
 Notas de campos:
 
@@ -96,7 +97,7 @@ Casos cubiertos:
 
 - Formato corto: hasta 10 campos por línea, 8 caracteres por campo.
 - Formato largo: 16 caracteres por campo (`CARD*` en primera columna).
-- Continuación: línea que comienza por `*`.
+- Continuación: línea que comienza por `*`; también se admite una continuación corta con el primer campo de 8 caracteres vacío.
 - Comentarios: `$` (línea completa o inline).
 
 ## 6. Resumen por archivo
