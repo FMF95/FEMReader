@@ -910,18 +910,43 @@ fn aligned_prefix_cell(prefix: &str, width: usize) -> String {
 
 fn render_card_named_fields(ui: &mut egui::Ui, card: &femreader::model::OptiStructCardItem) {
     ui.label("Campos:");
-    if card.fields.is_empty() {
+    let names = card_field_names(&card.kind);
+    if names.is_empty() && card.fields.is_empty() {
         ui.label("  (sin campos)");
         return;
     }
-    let names = card_field_names(&card.kind);
-    for (index, value) in card.fields.iter().enumerate() {
-        if let Some(name) = names.get(index).copied() {
-            ui.label(format!("  {} = {}", name, value));
-        } else {
-            ui.label(format!("  EXTRA_F{} = {}", index + 1, value));
-        }
+    let field_count = names.len().max(card.fields.len());
+    for index in 0..field_count {
+        let name = card_field_name(&card.kind, &names, index);
+        let value = card_field_value(&card.fields, index);
+        ui.label(format!("  {} = {}", name, value));
     }
+}
+
+fn card_field_name(kind: &OptiStructCardKind, names: &[&str], index: usize) -> String {
+    if let Some(name) = names.get(index) {
+        return (*name).to_string();
+    }
+
+    match kind {
+        OptiStructCardKind::Rbe2(card) if index < 4 + card.gm.len() => {
+            format!("GM{}", index - 3)
+        }
+        OptiStructCardKind::Rbe2(card) if card.alpha.is_some() && index == 4 + card.gm.len() => {
+            "ALPHA".to_string()
+        }
+        OptiStructCardKind::Rbe3(_) => format!("RBE3_DATA_{}", index - 3),
+        _ => format!("EXTRA_F{}", index + 1),
+    }
+}
+
+fn card_field_value(fields: &[String], index: usize) -> String {
+    fields
+        .get(index)
+        .map(String::as_str)
+        .filter(|value| !value.trim().is_empty())
+        .unwrap_or("null")
+        .to_string()
 }
 
 fn card_field_names(kind: &OptiStructCardKind) -> Vec<&'static str> {
@@ -979,6 +1004,8 @@ fn card_field_names(kind: &OptiStructCardKind) -> Vec<&'static str> {
         OptiStructCardKind::Mat1(_) => vec![
             "CARD", "MID", "E", "G", "NU", "RHO", "A", "TREF", "GE", "ST", "SC", "SS", "MCSID",
         ],
+        OptiStructCardKind::Rbe2(_) => vec!["CARD", "EID", "GN", "CM"],
+        OptiStructCardKind::Rbe3(_) => vec!["CARD", "EID", "REFGRID", "REFC"],
         OptiStructCardKind::Include(_) => vec!["CARD", "TARGET"],
         OptiStructCardKind::BeginBulk(_) => Vec::new(),
         OptiStructCardKind::EndData(_) => Vec::new(),
@@ -1252,6 +1279,22 @@ fn visual_line_with_fixed_width(line: &str, text_column_width: usize) -> String 
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn missing_card_fields_are_rendered_as_null() {
+        let fields = vec![
+            "CQUAD4".to_string(),
+            "10".to_string(),
+            "20".to_string(),
+            "1".to_string(),
+            "2".to_string(),
+            "3".to_string(),
+            "4".to_string(),
+        ];
+
+        assert_eq!(card_field_value(&fields, 7), "null");
+        assert_eq!(card_field_value(&fields, 6), "4");
+    }
 
     #[test]
     fn aligned_prefix_cell_pads_prefix_to_fixed_width() {

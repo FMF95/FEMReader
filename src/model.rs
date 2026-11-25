@@ -262,6 +262,23 @@ pub struct Mat1Card {
     pub mcsid: Option<i64>,
 }
 
+#[derive(Debug, Clone, PartialEq)]
+pub struct Rbe2Card {
+    pub eid: Option<i64>,
+    pub gn: Option<i64>,
+    pub cm: Option<String>,
+    pub gm: Vec<Option<i64>>,
+    pub alpha: Option<f64>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct Rbe3Card {
+    pub eid: Option<i64>,
+    pub refgrid: Option<i64>,
+    pub refc: Option<String>,
+    pub remaining_fields: Vec<String>,
+}
+
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct IncludeCard {
     pub target: String,
@@ -289,6 +306,8 @@ pub enum OptiStructCardKind {
     Pbush(PbushCard),
     Pshell(PshellCard),
     Mat1(Mat1Card),
+    Rbe2(Rbe2Card),
+    Rbe3(Rbe3Card),
     Include(IncludeCard),
     BeginBulk(BeginBulkCard),
     EndData(EndDataCard),

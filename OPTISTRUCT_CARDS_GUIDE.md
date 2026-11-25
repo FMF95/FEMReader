@@ -33,12 +33,16 @@ Cada item es:
 | `PBUSH` | `PbushCard` | `pid`, `k1..k6`, `b1..b6`, `ge1..ge6`, `sa`, `sb` |
 | `PSHELL` | `PshellCard` | `pid`, `mid1`, `t`, `mid2`, `twelve_i_over_t3`, `mid3`, `ts_over_t`, `nsm`, `z1`, `z2`, `mid4` |
 | `MAT1` | `Mat1Card` | `mid`, `e`, `g`, `nu`, `rho`, `a`, `tref`, `ge`, `st`, `sc`, `ss`, `mcsid` |
+| `RBE2` | `Rbe2Card` | `eid`, `gn`, `cm`, `gm`, `alpha` |
+| `RBE3` | `Rbe3Card` | `eid`, `refgrid`, `refc`, `remaining_fields` |
 | `INCLUDE` | `IncludeCard` | `target` |
 | `BEGIN BULK` | `BeginBulkCard` | marcador de inicio del bloque bulk |
 | `ENDDATA` | `EndDataCard` | marcador de cierre del bloque de datos |
 
 Solo se parsean por campos las tarjetas con parser específico. Las líneas no soportadas se conservan como `Text`.
 Las tarjetas añadidas mantienen `type: "Card"` y exponen sus campos tipados en `attributes`; no se añade una colección ni cambia la estructura de primer nivel del JSON.
+En `RBE3`, `remaining_fields` conserva en orden los grupos variables de peso/componentes/nodos y los campos opcionales, sin reinterpretar su estructura.
+La GUI muestra como `null` los campos conocidos que estén vacíos o no aparezcan en la tarjeta.
 
 Notas de campos:
 

@@ -5,7 +5,7 @@ use crate::model::{
     HyperMeshCommentFields, IncludeCard, Mat1Card, MomentCard, OptiStructCardCount,
     OptiStructCardItem, OptiStructCardKind, OptiStructCommentItem, OptiStructCommentKind,
     OptiStructFileSummary, OptiStructItem, OptiStructLocation, OptiStructTextItem, PbushCard,
-    PshellCard, UnknownCard,
+    PshellCard, Rbe2Card, Rbe3Card, UnknownCard,
 };
 use std::collections::BTreeMap;
 use std::path::Path;
@@ -394,6 +394,35 @@ fn parse_card_kind(card_name: &str, fields: &[String]) -> OptiStructCardKind {
             ss: field_f64(fields, 10),
             mcsid: field_i64(fields, 11),
         }),
+        "RBE2" => {
+            let mut gm_fields = fields.iter().skip(4).cloned().collect::<Vec<_>>();
+            let alpha = gm_fields.last().and_then(|value| {
+                value
+                    .chars()
+                    .any(|ch| matches!(ch, '.' | 'e' | 'E' | 'd' | 'D'))
+                    .then(|| value.parse::<f64>().ok())
+                    .flatten()
+            });
+            if alpha.is_some() {
+                gm_fields.pop();
+            }
+            OptiStructCardKind::Rbe2(Rbe2Card {
+                eid: field_i64(fields, 0),
+                gn: field_i64(fields, 1),
+                cm: field_string(fields, 2),
+                gm: gm_fields
+                    .iter()
+                    .map(|value| value.parse::<i64>().ok())
+                    .collect(),
+                alpha,
+            })
+        }
+        "RBE3" => OptiStructCardKind::Rbe3(Rbe3Card {
+            eid: field_i64(fields, 0),
+            refgrid: field_i64(fields, 1),
+            refc: field_string(fields, 2),
+            remaining_fields: fields.iter().skip(4).cloned().collect(),
+        }),
         "INCLUDE" => OptiStructCardKind::Include(IncludeCard {
             target: parse_include_target(fields).unwrap_or_default(),
         }),
@@ -707,6 +736,8 @@ fn is_supported_card_name(card_name: &str) -> bool {
             | "PBUSH"
             | "PSHELL"
             | "MAT1"
+            | "RBE2"
+            | "RBE3"
             | "INCLUDE"
             | "ENDDATA"
     )
@@ -838,6 +869,14 @@ mod tests {
                     "300", "4",
                 ],
             ),
+            short_card("RBE2", &["70", "1", "123", "2", "3", "4", "5", "0.01"]),
+            short_card(
+                "RBE3",
+                &[
+                    "80", "1", "123", "1.0", "123", "2", "3", "2.0", "456", "4", "5", "UM", "7",
+                    "123", "0.01", "20.0",
+                ],
+            ),
         ]
         .join("\n");
         let items = parse_file_items("file:cards", Path::new("cards.fem"), &content);
@@ -849,7 +888,7 @@ mod tests {
             })
             .collect::<Vec<_>>();
 
-        assert_eq!(cards.len(), 4);
+        assert_eq!(cards.len(), 6);
         assert!(matches!(
             &cards[0].kind,
             OptiStructCardKind::Cbush(card)
@@ -907,6 +946,26 @@ mod tests {
                     && card.sc == Some(200.0)
                     && card.ss == Some(300.0)
                     && card.mcsid == Some(4)
+        ));
+        assert!(matches!(
+            &cards[4].kind,
+            OptiStructCardKind::Rbe2(card)
+                if card.eid == Some(70)
+                    && card.gn == Some(1)
+                    && card.cm.as_deref() == Some("123")
+                    && card.gm == vec![Some(2), Some(3), Some(4), Some(5)]
+                    && card.alpha == Some(0.01)
+        ));
+        assert!(matches!(
+            &cards[5].kind,
+            OptiStructCardKind::Rbe3(card)
+                if card.eid == Some(80)
+                    && card.refgrid == Some(1)
+                    && card.refc.as_deref() == Some("123")
+                    && card.remaining_fields == vec![
+                        "1.0", "123", "2", "3", "2.0", "456", "4", "5", "UM", "7", "123",
+                        "0.01", "20.0",
+                    ]
         ));
     }
 

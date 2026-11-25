@@ -107,6 +107,8 @@ Además del `INCLUDE`, actualmente se tipan:
 - `CBUSH`
 - `PSHELL`
 - `PBUSH`
+- `RBE2`
+- `RBE3`
 - `FORCE`
 - `MOMENT`
 - `BEGIN BULK`

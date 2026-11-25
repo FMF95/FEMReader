@@ -4,7 +4,8 @@ use crate::model::{
     HWColorCommentFields, HyperMeshCommentFields, IncludeCard, Mat1Card, Model, ModelContent,
     MomentCard, OptiStructCardCount, OptiStructCardItem, OptiStructCardKind, OptiStructCommentItem,
     OptiStructCommentKind, OptiStructFileSummary, OptiStructItem, OptiStructLocation,
-    OptiStructModelSummary, OptiStructTextItem, PbushCard, PshellCard, SolverKind, UnknownCard,
+    OptiStructModelSummary, OptiStructTextItem, PbushCard, PshellCard, Rbe2Card, Rbe3Card,
+    SolverKind, UnknownCard,
 };
 
 pub trait Serializer {
@@ -306,6 +307,8 @@ fn serialize_optistruct_card_attributes(kind: &OptiStructCardKind) -> String {
         OptiStructCardKind::Pbush(card) => serialize_pbush_card(card),
         OptiStructCardKind::Pshell(card) => serialize_pshell_card(card),
         OptiStructCardKind::Mat1(card) => serialize_mat1_card(card),
+        OptiStructCardKind::Rbe2(card) => serialize_rbe2_card(card),
+        OptiStructCardKind::Rbe3(card) => serialize_rbe3_card(card),
         OptiStructCardKind::Include(card) => serialize_include_card(card),
         OptiStructCardKind::BeginBulk(card) => serialize_begin_bulk_card(card),
         OptiStructCardKind::EndData(card) => serialize_enddata_card(card),
@@ -332,6 +335,8 @@ fn serialize_json_guide_compact() -> String {
 \"PBUSH\":[\"F1:card_name\",\"F2:pid\",\"F3:k1\",\"F4:k2\",\"F5:k3\",\"F6:k4\",\"F7:k5\",\"F8:k6\",\"F9:b1\",\"F10:b2\",\"F11:b3\",\"F12:b4\",\"F13:b5\",\"F14:b6\",\"F15:ge1\",\"F16:ge2\",\"F17:ge3\",\"F18:ge4\",\"F19:ge5\",\"F20:ge6\",\"F21:sa\",\"F22:sb\"],\
 \"PSHELL\":[\"F1:card_name\",\"F2:pid\",\"F3:mid1\",\"F4:t\",\"F5:mid2\",\"F6:twelve_i_over_t3\",\"F7:mid3\",\"F8:ts_over_t\",\"F9:nsm\",\"F10:z1\",\"F11:z2\",\"F12:mid4\"],\
 \"MAT1\":[\"F1:card_name\",\"F2:mid\",\"F3:e\",\"F4:g\",\"F5:nu\",\"F6:rho\",\"F7:a\",\"F8:tref\",\"F9:ge\",\"F10:st\",\"F11:sc\",\"F12:ss\",\"F13:mcsid\"],\
+\"RBE2\":[\"F1:card_name\",\"F2:eid\",\"F3:gn\",\"F4:cm\",\"F5..F(n-1):gm\",\"F(n):alpha (opcional)\"],\
+\"RBE3\":[\"F1:card_name\",\"F2:eid\",\"F3:refgrid\",\"F4:refc\",\"F5..F(n):remaining_fields (grupos de peso/componentes/nodos y campos opcionales)\"],\
 \"INCLUDE\":[\"F1:card_name\",\"F2:target\"],\
 \"BEGIN BULK\":[],\
 \"ENDDATA\":[]\
@@ -491,6 +496,33 @@ fn serialize_mat1_card(card: &Mat1Card) -> String {
         serialize_opt_f64(card.sc),
         serialize_opt_f64(card.ss),
         serialize_opt_i64(card.mcsid)
+    )
+}
+
+fn serialize_rbe2_card(card: &Rbe2Card) -> String {
+    let gm = card
+        .gm
+        .iter()
+        .map(|value| serialize_opt_i64(*value))
+        .collect::<Vec<_>>()
+        .join(",");
+    format!(
+        "{{\"eid\":{},\"gn\":{},\"cm\":{},\"gm\":[{}],\"alpha\":{}}}",
+        serialize_opt_i64(card.eid),
+        serialize_opt_i64(card.gn),
+        serialize_opt_string(card.cm.as_deref()),
+        gm,
+        serialize_opt_f64(card.alpha)
+    )
+}
+
+fn serialize_rbe3_card(card: &Rbe3Card) -> String {
+    format!(
+        "{{\"eid\":{},\"refgrid\":{},\"refc\":{},\"remaining_fields\":{}}}",
+        serialize_opt_i64(card.eid),
+        serialize_opt_i64(card.refgrid),
+        serialize_opt_string(card.refc.as_deref()),
+        serialize_string_array(&card.remaining_fields)
     )
 }
 
@@ -817,6 +849,14 @@ mod tests {
                     "300", "4",
                 ],
             ),
+            short_card("RBE2", &["70", "1", "123", "2", "3", "4", "5", "0.01"]),
+            short_card(
+                "RBE3",
+                &[
+                    "80", "1", "123", "1.0", "123", "2", "3", "2.0", "456", "4", "5", "UM", "7",
+                    "123", "0.01", "20.0",
+                ],
+            ),
         ]
         .join("\n");
         let items = crate::optistruct::parse_file_items(
@@ -839,6 +879,12 @@ mod tests {
         assert!(serialized[2].contains("\"twelve_i_over_t3\":0.083"));
         assert!(serialized[3].contains("\"card_name\":\"MAT1\""));
         assert!(serialized[3].contains("\"mcsid\":4"));
+        assert!(serialized[4].contains("\"card_name\":\"RBE2\""));
+        assert!(serialized[4].contains("\"gm\":[2,3,4,5]"));
+        assert!(serialized[4].contains("\"alpha\":0.01"));
+        assert!(serialized[5].contains("\"card_name\":\"RBE3\""));
+        assert!(serialized[5].contains("\"remaining_fields\":[\"1.0\",\"123\""));
+        assert!(serialized[5].contains("\"UM\",\"7\",\"123\",\"0.01\",\"20.0\"]"));
     }
 
     #[test]
