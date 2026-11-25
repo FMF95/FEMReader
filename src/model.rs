@@ -275,12 +275,13 @@ pub struct Rbe2Card {
     pub alpha: Option<f64>,
 }
 
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq)]
 pub struct Rbe3Card {
     pub eid: Option<i64>,
     pub refgrid: Option<i64>,
     pub refc: Option<String>,
     pub remaining_fields: Vec<String>,
+    pub alpha: Option<f64>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]

@@ -336,7 +336,7 @@ fn serialize_json_guide_compact() -> String {
 \"PSHELL\":[\"F1:card_name\",\"F2:pid\",\"F3:mid1\",\"F4:t\",\"F5:mid2\",\"F6:twelve_i_over_t3\",\"F7:mid3\",\"F8:ts_over_t\",\"F9:nsm\",\"F10:z1\",\"F11:z2\",\"F12:mid4\"],\
 \"MAT1\":[\"F1:card_name\",\"F2:mid\",\"F3:e\",\"F4:g\",\"F5:nu\",\"F6:rho\",\"F7:a\",\"F8:tref\",\"F9:ge\",\"F10:st\",\"F11:sc\",\"F12:ss\",\"F13:mcsid\"],\
 \"RBE2\":[\"F1:card_name\",\"F2:eid\",\"F3:gn\",\"F4:cm\",\"F5..F(n-1):gm\",\"F(n):alpha (opcional)\"],\
-\"RBE3\":[\"F1:card_name\",\"F2:eid\",\"F3:refgrid\",\"F4:refc\",\"F5..F(n):remaining_fields (grupos de peso/componentes/nodos y campos opcionales)\"],\
+\"RBE3\":[\"F1:card_name\",\"F2:eid\",\"F3:blank\",\"F4:refgrid\",\"F5:refc\",\"F6..F(n-2):remaining_fields (grupos de peso/componentes/nodos y UM)\",\"F(n-1):ALPHA (marcador opcional)\",\"F(n):alpha (valor opcional)\"],\
 \"INCLUDE\":[\"F1:card_name\",\"F2:target\"],\
 \"BEGIN BULK\":[],\
 \"ENDDATA\":[]\
@@ -522,11 +522,12 @@ fn serialize_rbe2_card(card: &Rbe2Card) -> String {
 
 fn serialize_rbe3_card(card: &Rbe3Card) -> String {
     format!(
-        "{{\"eid\":{},\"refgrid\":{},\"refc\":{},\"remaining_fields\":{}}}",
+        "{{\"eid\":{},\"refgrid\":{},\"refc\":{},\"remaining_fields\":{},\"alpha\":{}}}",
         serialize_opt_i64(card.eid),
         serialize_opt_i64(card.refgrid),
         serialize_opt_string(card.refc.as_deref()),
-        serialize_string_array(&card.remaining_fields)
+        serialize_string_array(&card.remaining_fields),
+        serialize_opt_f64(card.alpha)
     )
 }
 
@@ -857,8 +858,8 @@ mod tests {
             short_card(
                 "RBE3",
                 &[
-                    "80", "1", "123", "1.0", "123", "2", "3", "2.0", "456", "4", "5", "UM", "7",
-                    "123", "0.01", "20.0",
+                    "80", "", "1", "123", "1.0", "123", "2", "3", "2.0", "456", "4", "5", "UM",
+                    "7", "123", "ALPHA", "1.45e-5",
                 ],
             ),
         ]
@@ -891,7 +892,8 @@ mod tests {
         assert!(serialized[4].contains("\"alpha\":0.01"));
         assert!(serialized[5].contains("\"card_name\":\"RBE3\""));
         assert!(serialized[5].contains("\"remaining_fields\":[\"1.0\",\"123\""));
-        assert!(serialized[5].contains("\"UM\",\"7\",\"123\",\"0.01\",\"20.0\"]"));
+        assert!(serialized[5].contains("\"UM\",\"7\",\"123\"]"));
+        assert!(serialized[5].contains("\"alpha\":0.0000145"));
     }
 
     #[test]

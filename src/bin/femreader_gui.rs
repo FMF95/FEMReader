@@ -917,25 +917,64 @@ fn render_card_named_fields(ui: &mut egui::Ui, card: &femreader::model::OptiStru
     }
     let field_count = names.len().max(card.fields.len());
     for index in 0..field_count {
-        let name = card_field_name(&card.kind, &names, index);
+        let name = card_field_name(&card.kind, &names, &card.fields, index);
         let value = card_field_value(&card.fields, index);
         ui.label(format!("  {} = {}", name, value));
     }
+    for name in missing_optional_card_fields(&card.kind) {
+        ui.label(format!("  {} = null", name));
+    }
 }
 
-fn card_field_name(kind: &OptiStructCardKind, names: &[&str], index: usize) -> String {
+fn missing_optional_card_fields(kind: &OptiStructCardKind) -> Vec<&'static str> {
+    match kind {
+        OptiStructCardKind::Rbe2(card) if card.alpha.is_none() => vec!["ALPHA"],
+        OptiStructCardKind::Rbe3(card) if card.alpha.is_none() => vec!["ALPHA"],
+        _ => Vec::new(),
+    }
+}
+
+fn card_field_name(
+    kind: &OptiStructCardKind,
+    names: &[&str],
+    fields: &[String],
+    index: usize,
+) -> String {
     if let Some(name) = names.get(index) {
         return (*name).to_string();
     }
 
     match kind {
-        OptiStructCardKind::Rbe2(card) if index < 4 + card.gm.len() => {
-            format!("GM{}", index - 3)
+        OptiStructCardKind::Rbe2(card) => {
+            let last_non_empty = fields.iter().rposition(|value| !value.trim().is_empty());
+            if card.alpha.is_some() && last_non_empty == Some(index) {
+                "ALPHA".to_string()
+            } else if fields
+                .get(index)
+                .is_some_and(|value| !value.trim().is_empty())
+            {
+                let gm_index = fields
+                    .iter()
+                    .skip(4)
+                    .take(index.saturating_sub(3))
+                    .filter(|value| value.parse::<i64>().is_ok())
+                    .count();
+                format!("GM{gm_index}")
+            } else {
+                "BLANK".to_string()
+            }
         }
-        OptiStructCardKind::Rbe2(card) if card.alpha.is_some() && index == 4 + card.gm.len() => {
+        OptiStructCardKind::Rbe3(card)
+            if card.alpha.is_some() && index == 5 + card.remaining_fields.len() =>
+        {
             "ALPHA".to_string()
         }
-        OptiStructCardKind::Rbe3(_) => format!("RBE3_DATA_{}", index - 3),
+        OptiStructCardKind::Rbe3(card)
+            if card.alpha.is_some() && index == 6 + card.remaining_fields.len() =>
+        {
+            "ALPHA_VALUE".to_string()
+        }
+        OptiStructCardKind::Rbe3(_) => format!("RBE3_DATA_{}", index - 4),
         _ => format!("EXTRA_F{}", index + 1),
     }
 }
@@ -1006,7 +1045,7 @@ fn card_field_names(kind: &OptiStructCardKind) -> Vec<&'static str> {
             "CARD", "MID", "E", "G", "NU", "RHO", "A", "TREF", "GE", "ST", "SC", "SS", "MCSID",
         ],
         OptiStructCardKind::Rbe2(_) => vec!["CARD", "EID", "GN", "CM"],
-        OptiStructCardKind::Rbe3(_) => vec!["CARD", "EID", "REFGRID", "REFC"],
+        OptiStructCardKind::Rbe3(_) => vec!["CARD", "EID", "BLANK", "REFGRID", "REFC"],
         OptiStructCardKind::Include(_) => vec!["CARD", "TARGET"],
         OptiStructCardKind::BeginBulk(_) => Vec::new(),
         OptiStructCardKind::EndData(_) => Vec::new(),
@@ -1295,6 +1334,27 @@ mod tests {
 
         assert_eq!(card_field_value(&fields, 7), "null");
         assert_eq!(card_field_value(&fields, 6), "4");
+    }
+
+    #[test]
+    fn missing_rbe_alpha_values_are_rendered_as_null() {
+        let rbe2 = OptiStructCardKind::Rbe2(femreader::model::Rbe2Card {
+            eid: None,
+            gn: None,
+            cm: None,
+            gm: Vec::new(),
+            alpha: None,
+        });
+        let rbe3 = OptiStructCardKind::Rbe3(femreader::model::Rbe3Card {
+            eid: None,
+            refgrid: None,
+            refc: None,
+            remaining_fields: Vec::new(),
+            alpha: None,
+        });
+
+        assert_eq!(missing_optional_card_fields(&rbe2), vec!["ALPHA"]);
+        assert_eq!(missing_optional_card_fields(&rbe3), vec!["ALPHA"]);
     }
 
     #[test]

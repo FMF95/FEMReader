@@ -430,10 +430,11 @@ fn parse_card_kind(card_name: &str, fields: &[String]) -> OptiStructCardKind {
         }),
         "RBE2" => {
             let mut gm_fields = fields.iter().skip(4).cloned().collect::<Vec<_>>();
+            gm_fields.retain(|value| !value.trim().is_empty());
             let alpha = gm_fields.last().and_then(|value| {
                 value
-                    .chars()
-                    .any(|ch| matches!(ch, '.' | 'e' | 'E' | 'd' | 'D'))
+                    .parse::<i64>()
+                    .is_err()
                     .then(|| value.parse::<f64>().ok())
                     .flatten()
             });
@@ -451,12 +452,29 @@ fn parse_card_kind(card_name: &str, fields: &[String]) -> OptiStructCardKind {
                 alpha,
             })
         }
-        "RBE3" => OptiStructCardKind::Rbe3(Rbe3Card {
-            eid: field_i64(fields, 0),
-            refgrid: field_i64(fields, 1),
-            refc: field_string(fields, 2),
-            remaining_fields: fields.iter().skip(4).cloned().collect(),
-        }),
+        "RBE3" => {
+            let eid = field_i64(fields, 0);
+            let refgrid = field_i64(fields, 2);
+            let refc = field_string(fields, 3);
+            let mut remaining_fields = fields.iter().skip(5).cloned().collect::<Vec<_>>();
+            let alpha_index = remaining_fields.len().checked_sub(2);
+            let mut alpha = None;
+            if let Some(index) = alpha_index
+                && remaining_fields[index].eq_ignore_ascii_case("ALPHA")
+            {
+                alpha = remaining_fields[index + 1].parse::<f64>().ok();
+                if alpha.is_some() {
+                    remaining_fields.truncate(index);
+                }
+            }
+            OptiStructCardKind::Rbe3(Rbe3Card {
+                eid,
+                refgrid,
+                refc,
+                remaining_fields,
+                alpha,
+            })
+        }
         "INCLUDE" => OptiStructCardKind::Include(IncludeCard {
             target: parse_include_target(fields).unwrap_or_default(),
         }),
@@ -891,6 +909,14 @@ mod tests {
         lines.join("\n")
     }
 
+    fn short_continuation(values: &[&str]) -> String {
+        let mut line = "        ".to_string();
+        for value in values {
+            line.push_str(&format!("{value:<8}"));
+        }
+        line.trim_end().to_string()
+    }
+
     #[test]
     fn parses_cbush_pbush_pshell_and_mat1_fields() {
         let cbush = format!(
@@ -905,6 +931,19 @@ mod tests {
             "0.5",
             "-0.7"
         );
+        let rbe3 = [
+            short_card("RBE3", &["14", "", "100", "1234", "1.0", "123", "1", "3"]),
+            short_continuation(&["5", "4.7", "1", "2", "4", "6", "5.2", "2"]),
+            short_continuation(&["7", "8", "9", "5.1", "1", "15", "16"]),
+            short_continuation(&["UM", "15", "123", "5", "13", "7", "3"]),
+            short_continuation(&["ALPHA", "1.45e-5"]),
+        ]
+        .join("\n");
+        let rbe2 = [
+            short_card("RBE2", &["70", "1", "123", "2", "3", "4", "5", "6"]),
+            short_continuation(&["7", "", "", "", "0.01"]),
+        ]
+        .join("\n");
         let content = [
             cbush,
             short_card(
@@ -927,14 +966,8 @@ mod tests {
                     "300", "4",
                 ],
             ),
-            short_card("RBE2", &["70", "1", "123", "2", "3", "4", "5", "0.01"]),
-            short_card(
-                "RBE3",
-                &[
-                    "80", "1", "123", "1.0", "123", "2", "3", "2.0", "456", "4", "5", "UM", "7",
-                    "123", "0.01", "20.0",
-                ],
-            ),
+            rbe2,
+            rbe3,
         ]
         .join("\n");
         let items = parse_file_items("file:cards", Path::new("cards.fem"), &content);
@@ -1028,19 +1061,37 @@ mod tests {
                 if card.eid == Some(70)
                     && card.gn == Some(1)
                     && card.cm.as_deref() == Some("123")
-                    && card.gm == vec![Some(2), Some(3), Some(4), Some(5)]
+                    && card.gm == vec![
+                        Some(2), Some(3), Some(4), Some(5), Some(6), Some(7)
+                    ]
                     && card.alpha == Some(0.01)
+        ));
+        let rbe2_without_alpha = parse_file_items(
+            "file:rbe2-no-alpha",
+            Path::new("rbe2-no-alpha.fem"),
+            &short_card("RBE2", &["71", "1", "123", "2", "3", "4"]),
+        );
+        assert!(matches!(
+            &rbe2_without_alpha[0],
+            OptiStructItem::Card(card)
+                if matches!(
+                    &card.kind,
+                    OptiStructCardKind::Rbe2(rbe2)
+                        if rbe2.gm == vec![Some(2), Some(3), Some(4)] && rbe2.alpha.is_none()
+                )
         ));
         assert!(matches!(
             &cards[5].kind,
             OptiStructCardKind::Rbe3(card)
-                if card.eid == Some(80)
-                    && card.refgrid == Some(1)
-                    && card.refc.as_deref() == Some("123")
-                    && card.remaining_fields == vec![
-                        "1.0", "123", "2", "3", "2.0", "456", "4", "5", "UM", "7", "123",
-                        "0.01", "20.0",
-                    ]
+                if card.eid == Some(14)
+                    && card.refgrid == Some(100)
+                    && card.refc.as_deref() == Some("1234")
+                    && card.alpha == Some(1.45e-5)
+                    && card.remaining_fields.first().map(String::as_str) == Some("1.0")
+                    && card.remaining_fields.contains(&"UM".to_string())
+                    && !card.remaining_fields.iter().any(|field| {
+                        field == "ALPHA" || field == "1.45e-5"
+                    })
         ));
     }
 
